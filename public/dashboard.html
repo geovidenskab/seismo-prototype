@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard — Seismisk netværk</title>
+<style>
+:root { --navy: #0a0f3c; --warm: #f5f0e8; --sand: #e8dfd0; --cyan: #00b4d8;
+  --red: #e63946; --green: #2a9d8f; --orange: #ef8a17; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--navy); color: var(--warm); min-height: 100vh; }
+
+.screen { display: none; min-height: 100vh; }
+.screen.active { display: flex; }
+
+/* ── Create screen ── */
+.create-screen { align-items: center; justify-content: center; flex-direction: column; padding: 2rem; }
+.logo { font-size: 1.1rem; font-weight: 500; letter-spacing: .03em; margin-bottom: .3rem; }
+.logo span { color: var(--cyan); }
+.sub { font-size: .7rem; opacity: .35; margin-bottom: 2rem; }
+.btn { padding: .7rem 2rem; border: none; border-radius: 8px; font-size: .9rem; font-weight: 600;
+  cursor: pointer; transition: transform .1s; }
+.btn:active { transform: scale(.97); }
+.btn-cyan { background: var(--cyan); color: var(--navy); }
+.btn-outline { background: transparent; border: 1px solid rgba(255,255,255,.12); color: rgba(245,240,232,.5); }
+.btn-red { background: rgba(230,57,70,.15); color: var(--red); border: 1px solid rgba(230,57,70,.2); }
+.btn-green { background: rgba(42,157,143,.15); color: var(--green); border: 1px solid rgba(42,157,143,.2); }
+
+/* ── Dashboard layout ── */
+.dash { flex-direction: column; }
+.dash-header { display: flex; align-items: center; justify-content: space-between;
+  padding: .6rem 1rem; border-bottom: .5px solid rgba(255,255,255,.06); }
+.dash-header .logo { margin: 0; font-size: .9rem; }
+.session-badge { display: flex; align-items: center; gap: .5rem; }
+.session-code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 1.1rem;
+  font-weight: 600; color: var(--cyan); letter-spacing: .1em; }
+.session-state { font-size: .65rem; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.session-state.lobby { background: rgba(0,180,216,.1); color: var(--cyan); }
+.session-state.countdown { background: rgba(239,138,23,.1); color: var(--orange); }
+.session-state.recording { background: rgba(230,57,70,.12); color: var(--red); animation: recBlink 1s step-end infinite; }
+.session-state.stopped { background: rgba(42,157,143,.12); color: var(--green); }
+@keyframes recBlink { 50% { opacity: .4; } }
+
+.dash-body { flex: 1; display: grid; grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr auto; gap: 1px; background: rgba(255,255,255,.04); min-height: 0; }
+.dash-body > div { background: var(--navy); padding: .8rem; overflow: hidden; }
+.panel-title { font-size: .6rem; text-transform: uppercase; letter-spacing: .1em;
+  opacity: .3; margin-bottom: .6rem; }
+
+/* ── QR ── */
+.join-panel { display: flex; flex-direction: column; align-items: center; gap: .8rem; }
+.qr-wrap { width: 160px; height: 160px; background: white; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.qr-wrap svg { width: 150px; height: 150px; }
+.join-url { font-size: .65rem; opacity: .35; word-break: break-all; text-align: center; }
+
+/* ── Stats ── */
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; grid-column: 1 / -1; }
+.stat { background: rgba(255,255,255,.03); border-radius: 8px; padding: .5rem; text-align: center; }
+.stat-label { font-size: .55rem; text-transform: uppercase; letter-spacing: .08em; opacity: .3; }
+.stat-val { font-size: 1.2rem; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.stat-val.cyan { color: var(--cyan); }
+.stat-val.green { color: var(--green); }
+.stat-val.orange { color: var(--orange); }
+.stat-val.red { color: var(--red); }
+
+/* ── Live seismograms ── */
+.seismo-panel { overflow-y: auto; }
+.seismo-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.seismo-label { font-size: .6rem; opacity: .35; width: 28px; text-align: right; flex-shrink: 0; }
+.seismo-canvas { flex: 1; height: 28px; background: rgba(255,255,255,.02); border-radius: 3px; }
+
+/* ── Controls ── */
+.controls { display: flex; gap: .5rem; padding: .6rem 1rem;
+  border-top: .5px solid rgba(255,255,255,.06); justify-content: center; align-items: center; flex-wrap: wrap; }
+.controls .btn { padding: .5rem 1.2rem; font-size: .8rem; }
+.ctrl-select { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+  color: var(--warm); border-radius: 6px; padding: .3rem .5rem; font-size: .75rem; }
+.rec-timer { font-family: 'SF Mono', monospace; font-size: .85rem; color: var(--red);
+  min-width: 40px; text-align: center; display: none; }
+
+/* ── Review screen ── */
+.review { flex-direction: column; }
+.review-header { display: flex; align-items: center; gap: 1rem; padding: .6rem 1rem;
+  border-bottom: .5px solid rgba(255,255,255,.06); flex-shrink: 0; }
+.review-title { font-size: .85rem; font-weight: 600; }
+.review-hint { font-size: .65rem; opacity: .3; margin-left: auto; }
+.review-body { flex: 1; min-height: 0; overflow-y: auto; padding: .5rem 1rem; }
+.review-track { margin-bottom: .5rem; }
+.review-track-label { font-size: .6rem; opacity: .4; margin-bottom: 3px; }
+.review-canvas-wrap { position: relative; }
+.review-canvas { display: block; width: 100%; height: 70px; border-radius: 4px;
+  background: rgba(255,255,255,.02); cursor: crosshair; }
+.review-axis { position: relative; height: 20px; margin-bottom: .5rem; }
+.review-axis canvas { display: block; width: 100%; height: 20px; }
+.review-controls { display: flex; gap: .5rem; padding: .6rem 1rem;
+  border-top: .5px solid rgba(255,255,255,.06); justify-content: center; align-items: center; flex-shrink: 0; }
+.review-controls .btn { padding: .4rem 1rem; font-size: .8rem; }
+.zoom-label { font-size: .7rem; opacity: .4; font-variant-numeric: tabular-nums; min-width: 60px; text-align: center; }
+
+@media (max-width: 800px) {
+  .dash-body { grid-template-columns: 1fr; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- ═══ CREATE ═══ -->
+<div class="screen create-screen active" id="scr-create">
+  <div class="logo">sans<span>·</span>science</div>
+  <div class="sub">Kom til kernen — seismisk netværk</div>
+  <button class="btn btn-cyan" id="btn-create" style="font-size:1rem;padding:.8rem 3rem">
+    Opret nyt seismisk netværk
+  </button>
+</div>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div class="screen dash" id="scr-dash">
+  <div class="dash-header">
+    <div class="logo">sans<span>·</span>science</div>
+    <div class="session-badge">
+      <span class="session-code" id="d-code">—</span>
+      <span class="session-state lobby" id="d-state">Lobby</span>
+    </div>
+  </div>
+
+  <div class="dash-body">
+    <!-- QR -->
+    <div class="join-panel">
+      <div class="panel-title">Tilslutning</div>
+      <div class="qr-wrap" id="d-qr"></div>
+      <div class="join-url" id="d-url"></div>
+      <div style="font-size:.65rem;opacity:.3;text-align:center">Eleverne scanner QR eller taster koden</div>
+    </div>
+
+    <!-- Live seismogrammer -->
+    <div class="seismo-panel">
+      <div class="panel-title">Live seismogrammer</div>
+      <div id="seismo-list"></div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat"><div class="stat-label">Stationer</div><div class="stat-val cyan" id="d-count">0</div></div>
+      <div class="stat"><div class="stat-label">Peak accel.</div><div class="stat-val orange" id="d-peak">—</div></div>
+      <div class="stat"><div class="stat-label">Triggers</div><div class="stat-val red" id="d-triggers">0</div></div>
+      <div class="stat"><div class="stat-label">Status</div><div class="stat-val green" id="d-status-text">Lobby</div></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <select class="ctrl-select" id="countdown-dur">
+      <option value="3">3 sek. countdown</option>
+      <option value="5">5 sek. countdown</option>
+      <option value="10">10 sek. countdown</option>
+    </select>
+    <select class="ctrl-select" id="rec-duration">
+      <option value="5">5 sek. optagelse</option>
+      <option value="10" selected>10 sek. optagelse</option>
+      <option value="20">20 sek. optagelse</option>
+      <option value="30">30 sek. optagelse</option>
+      <option value="60">60 sek. optagelse</option>
+    </select>
+    <button class="btn btn-green" id="btn-countdown">Countdown + start</button>
+    <span class="rec-timer" id="rec-timer">—</span>
+    <button class="btn btn-red" id="btn-stop" style="display:none">Stop</button>
+    <button class="btn btn-outline" id="btn-reset" style="display:none">Nulstil</button>
+  </div>
+</div>
+
+<!-- ═══ REVIEW ═══ -->
+<div class="screen review" id="scr-review">
+  <div class="review-header">
+    <div class="logo" style="margin:0;font-size:.9rem">sans<span style="color:var(--cyan)">·</span>science</div>
+    <div class="review-title" id="rv-title">Optagelse</div>
+    <div class="review-hint">Scroll = zoom &nbsp;·&nbsp; Træk = panorér</div>
+    <button class="btn btn-outline" id="btn-back" style="padding:.35rem .9rem;font-size:.75rem">← Tilbage</button>
+  </div>
+
+  <div class="review-body" id="rv-body">
+    <!-- tracks injectes her -->
+  </div>
+
+  <div class="review-axis"><canvas id="rv-axis"></canvas></div>
+
+  <div class="review-controls">
+    <button class="btn btn-outline" id="rv-zoom-out">−</button>
+    <span class="zoom-label" id="rv-zoom-label">—</span>
+    <button class="btn btn-outline" id="rv-zoom-in">+</button>
+    <button class="btn btn-cyan" id="rv-fit" style="margin-left:.5rem">Vis alt</button>
+    <button class="btn btn-green" id="rv-new" style="margin-left:.5rem">Ny optagelse</button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let ws = null;
+let sessionCode = '';
+let sessionState = 'lobby';
+const stations = new Map();
+const seismoData = new Map();       // live: stationId → { samples[], canvas, ctx }
+const recordingBuffer = new Map();  // review: stationId → [{t, z}]
+let triggerCount = 0;
+let globalPeak = 0;
+let recStartTime = 0;
+let recAutoStopTimer = null;
+let recTimerIv = null;
+
+// ── Review state ──
+let rvViewStart = 0;   // ms relative to recStartTime
+let rvViewEnd = 10000;
+let rvDragging = false;
+let rvDragStartX = 0;
+let rvDragStartView = [0, 0];
+const rvCanvases = new Map(); // stationId → { canvas, ctx }
+
+// ═══════════════════════════════════════════════════════════
+// CREATE SESSION
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-create').addEventListener('click', async () => {
+  const res = await fetch('/api/session', { method: 'POST' });
+  const data = await res.json();
+  sessionCode = data.code;
+  document.getElementById('d-code').textContent = data.code;
+
+  // Hent QR med netværks-IP så telefoner på samme wifi kan scanne
+  const infoRes = await fetch('/api/info');
+  const info = await infoRes.json();
+  const qrRes = await fetch(`/api/session/${data.code}/qr?host=${info.host}`);
+  const qrData = await qrRes.json();
+  document.getElementById('d-qr').innerHTML = qrData.svg;
+  document.getElementById('d-url').textContent = qrData.url;
+
+  document.getElementById('scr-create').classList.remove('active');
+  document.getElementById('scr-dash').classList.add('active');
+  connectDashboard(data.code);
+});
+
+// ═══════════════════════════════════════════════════════════
+// WEBSOCKET
+// ═══════════════════════════════════════════════════════════
+function connectDashboard(code) {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws?code=${code}&role=dashboard`);
+  ws.onmessage = e => handleMsg(JSON.parse(e.data));
+  ws.onclose = () => setTimeout(() => connectDashboard(code), 2000);
+}
+
+function handleMsg(msg) {
+  switch (msg.type) {
+    case 'init':
+      msg.stations.forEach(s => addStation(s));
+      break;
+    case 'station:joined':   addStation(msg); break;
+    case 'station:ready':    updateStation(msg); break;
+    case 'station:left':     removeStation(msg); break;
+    case 'data':             handleData(msg); break;
+    case 'trigger':
+      triggerCount++;
+      document.getElementById('d-triggers').textContent = triggerCount;
+      const row = document.querySelector(`[data-station="${msg.id}"]`);
+      if (row) { row.style.background = 'rgba(230,57,70,.08)'; setTimeout(() => row.style.background = '', 500); }
+      break;
+    case 'countdown':   setDashState('countdown'); break;
+    case 'recording:start': onRecordingStart(); break;
+    case 'recording:stop':  onRecordingStop(); break;
+    case 'session:reset':
+      setDashState('lobby');
+      triggerCount = 0; globalPeak = 0;
+      document.getElementById('d-triggers').textContent = '0';
+      document.getElementById('d-peak').textContent = '—';
+      seismoData.forEach(sd => sd.samples = []);
+      recordingBuffer.clear();
+      break;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// STATIONS
+// ═══════════════════════════════════════════════════════════
+function addStation(msg) {
+  stations.set(msg.id, { name: msg.name || 'S' + msg.id });
+  document.getElementById('d-count').textContent = msg.count || stations.size;
+  ensureSeismoRow(msg.id, msg.name || 'S' + msg.id);
+  if (!recordingBuffer.has(msg.id)) recordingBuffer.set(msg.id, []);
+}
+
+function updateStation(msg) {
+  const st = stations.get(msg.id);
+  if (st) Object.assign(st, msg);
+  document.getElementById('d-count').textContent = msg.count || stations.size;
+}
+
+function removeStation(msg) {
+  stations.delete(msg.id);
+  document.getElementById('d-count').textContent = msg.count || stations.size;
+  const row = document.querySelector(`[data-station="${msg.id}"]`);
+  if (row) row.remove();
+  seismoData.delete(msg.id);
+}
+
+// ═══════════════════════════════════════════════════════════
+// LIVE SEISMOGRAMS
+// ═══════════════════════════════════════════════════════════
+const MAX_SEISMO = 200;
+
+function ensureSeismoRow(id, name) {
+  if (seismoData.has(id)) return;
+  const list = document.getElementById('seismo-list');
+  const row = document.createElement('div');
+  row.className = 'seismo-row'; row.dataset.station = id;
+  const label = document.createElement('div');
+  label.className = 'seismo-label'; label.textContent = name;
+  const canvas = document.createElement('canvas');
+  canvas.className = 'seismo-canvas';
+  canvas.height = 28 * (window.devicePixelRatio || 1);
+  row.appendChild(label); row.appendChild(canvas); list.appendChild(row);
+  seismoData.set(id, { samples: [], canvas, ctx: canvas.getContext('2d'), peak: 0 });
+}
+
+function handleData(msg) {
+  // Live strip
+  const sd = seismoData.get(msg.id);
+  if (sd) {
+    sd.samples.push(msg.z);
+    if (sd.samples.length > MAX_SEISMO) sd.samples.shift();
+    if (Math.abs(msg.peak) > sd.peak) sd.peak = Math.abs(msg.peak);
+  }
+
+  // Recording buffer (kun under optagelse)
+  if (sessionState === 'recording') {
+    if (!recordingBuffer.has(msg.id)) recordingBuffer.set(msg.id, []);
+    recordingBuffer.get(msg.id).push({ t: msg.t || Date.now(), z: msg.z });
+  }
+
+  if (Math.abs(msg.peak) > globalPeak) {
+    globalPeak = Math.abs(msg.peak);
+    document.getElementById('d-peak').textContent = globalPeak.toFixed(2) + ' m/s²';
+  }
+}
+
+// Tegn live seismogrammer
+setInterval(() => {
+  seismoData.forEach(sd => {
+    const canvas = sd.canvas;
+    const ctx = sd.ctx;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    if (sd.samples.length < 2) return;
+    const mid = h / 2;
+    const maxAbs = Math.max(...sd.samples.map(Math.abs), 0.1);
+    const scale = maxAbs * 1.3;
+    ctx.strokeStyle = 'rgba(255,255,255,.06)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+    ctx.strokeStyle = sessionState === 'recording' ? '#e63946' : '#00b4d8';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < sd.samples.length; i++) {
+      const x = (MAX_SEISMO - sd.samples.length + i) / MAX_SEISMO * w;
+      const y = mid - (sd.samples[i] / scale) * (h * 0.4);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+}, 50);
+
+// ═══════════════════════════════════════════════════════════
+// RECORDING LIFECYCLE
+// ═══════════════════════════════════════════════════════════
+function onRecordingStart() {
+  setDashState('recording');
+  recStartTime = Date.now();
+  recordingBuffer.forEach((v, k) => recordingBuffer.set(k, [])); // nulstil buffer
+
+  // Auto-stop timer
+  const dur = parseInt(document.getElementById('rec-duration').value) * 1000;
+  if (recAutoStopTimer) clearTimeout(recAutoStopTimer);
+  recAutoStopTimer = setTimeout(() => apiControl('stop'), dur);
+
+  // Nedtællings-display
+  let remaining = dur / 1000;
+  const timerEl = document.getElementById('rec-timer');
+  timerEl.style.display = '';
+  timerEl.textContent = remaining + 's';
+  if (recTimerIv) clearInterval(recTimerIv);
+  recTimerIv = setInterval(() => {
+    remaining--;
+    timerEl.textContent = remaining + 's';
+    if (remaining <= 0) { clearInterval(recTimerIv); timerEl.style.display = 'none'; }
+  }, 1000);
+}
+
+function onRecordingStop() {
+  setDashState('stopped');
+  clearTimeout(recAutoStopTimer);
+  clearInterval(recTimerIv);
+  document.getElementById('rec-timer').style.display = 'none';
+  setTimeout(() => openReview(), 400);
+}
+
+// ═══════════════════════════════════════════════════════════
+// REVIEW
+// ═══════════════════════════════════════════════════════════
+function openReview() {
+  // Beregn total varighed fra buffer
+  let minT = Infinity, maxT = -Infinity;
+  recordingBuffer.forEach(samples => {
+    samples.forEach(s => { if (s.t < minT) minT = s.t; if (s.t > maxT) maxT = s.t; });
+  });
+  if (minT === Infinity) { minT = recStartTime; maxT = recStartTime + 5000; }
+
+  const totalMs = maxT - minT;
+  rvViewStart = 0;
+  rvViewEnd = totalMs || 10000;
+
+  // Byg tracks
+  const body = document.getElementById('rv-body');
+  body.innerHTML = '';
+  rvCanvases.clear();
+
+  recordingBuffer.forEach((samples, id) => {
+    const name = stations.get(id)?.name || 'S' + id;
+    const track = document.createElement('div');
+    track.className = 'review-track';
+    const lbl = document.createElement('div');
+    lbl.className = 'review-track-label';
+    lbl.textContent = name;
+    const wrap = document.createElement('div');
+    wrap.className = 'review-canvas-wrap';
+    const canvas = document.createElement('canvas');
+    canvas.className = 'review-canvas';
+    wrap.appendChild(canvas);
+    track.appendChild(lbl); track.appendChild(wrap); body.appendChild(track);
+    rvCanvases.set(id, { canvas, ctx: canvas.getContext('2d'), samples, minT });
+  });
+
+  const dur = rvViewEnd - rvViewStart;
+  document.getElementById('rv-title').textContent =
+    `Optagelse — ${stations.size} station${stations.size !== 1 ? 'er' : ''} · ${(dur/1000).toFixed(1)}s`;
+
+  document.getElementById('scr-dash').classList.remove('active');
+  document.getElementById('scr-review').classList.add('active');
+
+  setupReviewInteraction();
+  requestAnimationFrame(drawReview);
+}
+
+function drawReview() {
+  if (!document.getElementById('scr-review').classList.contains('active')) return;
+  const dur = rvViewEnd - rvViewStart;
+
+  rvCanvases.forEach(({ canvas, ctx, samples, minT }) => {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    if (!w || !h) { requestAnimationFrame(drawReview); return; }
+    if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    // Vis kun samples i vinduet
+    const visible = samples.filter(s => {
+      const rel = s.t - minT;
+      return rel >= rvViewStart - 500 && rel <= rvViewEnd + 500;
+    });
+
+    if (visible.length < 2) {
+      ctx.fillStyle = 'rgba(255,255,255,.06)';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Ingen data i dette interval', w / 2, h / 2);
+      return;
+    }
+
+    const mid = h / 2;
+    const maxAbs = Math.max(...visible.map(s => Math.abs(s.z)), 0.05);
+    const scale = maxAbs * 1.3;
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,.06)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+
+    // Trace
+    ctx.strokeStyle = '#00b4d8';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let first = true;
+    for (const s of visible) {
+      const rel = s.t - minT;
+      const x = ((rel - rvViewStart) / dur) * w;
+      const y = mid - (s.z / scale) * (h * 0.38);
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      first = false;
+    }
+    ctx.stroke();
+
+    // Fill under
+    ctx.fillStyle = 'rgba(0,180,216,.06)';
+    ctx.beginPath();
+    first = true;
+    for (const s of visible) {
+      const rel = s.t - minT;
+      const x = ((rel - rvViewStart) / dur) * w;
+      const y = mid - (s.z / scale) * (h * 0.38);
+      first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      first = false;
+    }
+    if (visible.length > 0) {
+      const lastX = ((visible[visible.length - 1].t - minT - rvViewStart) / dur) * w;
+      const firstX = ((visible[0].t - minT - rvViewStart) / dur) * w;
+      ctx.lineTo(lastX, mid); ctx.lineTo(firstX, mid);
+    }
+    ctx.closePath(); ctx.fill();
+
+    // Scale
+    ctx.fillStyle = 'rgba(255,255,255,.2)';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(`±${scale.toFixed(3)} m/s²`, 4, 12);
+  });
+
+  drawAxis();
+  updateZoomLabel();
+  requestAnimationFrame(drawReview);
+}
+
+function drawAxis() {
+  const canvas = document.getElementById('rv-axis');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w) return;
+  if (canvas.width !== w * dpr) { canvas.width = w * dpr; canvas.height = h * dpr; }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const dur = rvViewEnd - rvViewStart;
+  const tickMs = niceInterval(dur, 8);
+
+  ctx.fillStyle = 'rgba(255,255,255,.25)';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+
+  const firstTick = Math.ceil(rvViewStart / tickMs) * tickMs;
+  for (let t = firstTick; t <= rvViewEnd; t += tickMs) {
+    const x = ((t - rvViewStart) / dur) * w;
+    ctx.fillStyle = 'rgba(255,255,255,.1)';
+    ctx.fillRect(x, 0, 1, 4);
+    ctx.fillStyle = 'rgba(255,255,255,.3)';
+    ctx.fillText(formatTime(t), x, 15);
+  }
+}
+
+function niceInterval(rangeMs, targetTicks) {
+  const raw = rangeMs / targetTicks;
+  const candidates = [50, 100, 200, 500, 1000, 2000, 5000, 10000, 30000];
+  for (const c of candidates) if (c >= raw) return c;
+  return 30000;
+}
+
+function formatTime(ms) {
+  if (ms < 1000) return ms + 'ms';
+  return (ms / 1000).toFixed(1) + 's';
+}
+
+function updateZoomLabel() {
+  const dur = (rvViewEnd - rvViewStart) / 1000;
+  document.getElementById('rv-zoom-label').textContent = dur.toFixed(1) + 's';
+}
+
+// ── Interaktion ──
+function setupReviewInteraction() {
+  // Zoom knapper
+  document.getElementById('rv-zoom-in').onclick = () => zoomAround(0.5, 0.5);
+  document.getElementById('rv-zoom-out').onclick = () => zoomAround(0.5, 2.0);
+  document.getElementById('rv-fit').onclick = () => {
+    rvViewStart = 0;
+    let maxT = -Infinity;
+    recordingBuffer.forEach(samples => samples.forEach(s => { const rel = s.t - (rvCanvases.values().next().value?.minT || 0); if (rel > maxT) maxT = rel; }));
+    rvViewEnd = maxT > 0 ? maxT : 10000;
+  };
+
+  // Mousewheel zoom på alle review-canvas'er
+  document.getElementById('rv-body').addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor = e.deltaY > 0 ? 1.3 : 0.77;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    zoomAround(frac, factor);
+  }, { passive: false });
+
+  // Drag pan
+  document.getElementById('rv-body').addEventListener('mousedown', e => {
+    rvDragging = true;
+    rvDragStartX = e.clientX;
+    rvDragStartView = [rvViewStart, rvViewEnd];
+  });
+  window.addEventListener('mousemove', e => {
+    if (!rvDragging) return;
+    const rect = document.getElementById('rv-body').getBoundingClientRect();
+    const frac = (e.clientX - rvDragStartX) / rect.width;
+    const dur = rvDragStartView[1] - rvDragStartView[0];
+    const delta = -frac * dur;
+    rvViewStart = rvDragStartView[0] + delta;
+    rvViewEnd = rvDragStartView[1] + delta;
+    clampView();
+  });
+  window.addEventListener('mouseup', () => rvDragging = false);
+}
+
+function zoomAround(frac, factor) {
+  const dur = rvViewEnd - rvViewStart;
+  const pivot = rvViewStart + frac * dur;
+  const newDur = Math.max(500, Math.min(dur * factor, 300000));
+  rvViewStart = pivot - frac * newDur;
+  rvViewEnd = pivot + (1 - frac) * newDur;
+  clampView();
+}
+
+function clampView() {
+  const dur = rvViewEnd - rvViewStart;
+  if (rvViewStart < -1000) { rvViewStart = -1000; rvViewEnd = -1000 + dur; }
+}
+
+// ═══════════════════════════════════════════════════════════
+// CONTROLS
+// ═══════════════════════════════════════════════════════════
+function setDashState(state) {
+  sessionState = state;
+  const stateEl = document.getElementById('d-state');
+  const statusEl = document.getElementById('d-status-text');
+  stateEl.className = 'session-state ' + state;
+
+  const btnCountdown = document.getElementById('btn-countdown');
+  const btnStop = document.getElementById('btn-stop');
+  const btnReset = document.getElementById('btn-reset');
+
+  switch (state) {
+    case 'lobby':
+      stateEl.textContent = 'Lobby'; statusEl.textContent = 'Lobby'; statusEl.style.color = 'var(--cyan)';
+      btnCountdown.style.display = ''; btnStop.style.display = 'none'; btnReset.style.display = 'none';
+      break;
+    case 'countdown':
+      stateEl.textContent = 'Countdown...'; statusEl.textContent = 'Countdown'; statusEl.style.color = 'var(--orange)';
+      btnCountdown.style.display = 'none'; btnStop.style.display = '';
+      break;
+    case 'recording':
+      stateEl.textContent = 'Optagelse'; statusEl.textContent = 'Optagelse'; statusEl.style.color = 'var(--red)';
+      btnCountdown.style.display = 'none'; btnStop.style.display = ''; btnReset.style.display = 'none';
+      break;
+    case 'stopped':
+      stateEl.textContent = 'Stoppet'; statusEl.textContent = 'Afsluttet'; statusEl.style.color = 'var(--green)';
+      btnCountdown.style.display = 'none'; btnStop.style.display = 'none'; btnReset.style.display = '';
+      break;
+  }
+}
+
+async function apiControl(action, extra = {}) {
+  await fetch(`/api/session/${sessionCode}/control`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...extra })
+  });
+}
+
+document.getElementById('btn-countdown').addEventListener('click', () => {
+  const dur = parseInt(document.getElementById('countdown-dur').value);
+  apiControl('countdown', { duration: dur });
+});
+document.getElementById('btn-stop').addEventListener('click', () => apiControl('stop'));
+document.getElementById('btn-reset').addEventListener('click', () => apiControl('reset'));
+
+document.getElementById('btn-back').addEventListener('click', () => {
+  document.getElementById('scr-review').classList.remove('active');
+  document.getElementById('scr-dash').classList.add('active');
+});
+
+document.getElementById('rv-new').addEventListener('click', () => {
+  apiControl('reset');
+  document.getElementById('scr-review').classList.remove('active');
+  document.getElementById('scr-dash').classList.add('active');
+});
+</script>
+</body>
+</html>

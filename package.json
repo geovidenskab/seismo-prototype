@@ -1,0 +1,19 @@
+{
+  "name": "kom-til-kernen-seismo",
+  "version": "0.1.0",
+  "description": "Seismisk netværk — Kom til kernen med Inge Lehmann",
+
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.1",
+    "qrcode": "^1.5.4",
+    "ws": "^8.19.0"
+  },
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

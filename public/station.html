@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Seismograf — Station</title>
+<style>
+:root { --navy: #0a0f3c; --warm: #f5f0e8; --sand: #e8dfd0; --cyan: #00b4d8;
+  --red: #e63946; --green: #2a9d8f; --orange: #ef8a17; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--navy); color: var(--warm); min-height: 100dvh;
+  display: flex; flex-direction: column; touch-action: none; overflow: hidden; }
+
+/* ── Layout ── */
+.screen { flex: 1; display: none; flex-direction: column; padding: 1rem; }
+.screen.active { display: flex; }
+.logo { text-align: center; font-size: .95rem; font-weight: 500; letter-spacing: .03em; padding: .8rem 0 .2rem; }
+.logo span { color: var(--cyan); }
+.sub { text-align: center; font-size: .65rem; opacity: .35; margin-bottom: 1rem; }
+.title { font-size: 1rem; font-weight: 500; margin-bottom: .25rem; }
+.desc { font-size: .8rem; opacity: .5; line-height: 1.5; margin-bottom: 1rem; }
+.spacer { flex: 1; }
+.btn { display: block; width: 100%; padding: .75rem; border: none; border-radius: 8px;
+  font-size: .85rem; font-weight: 600; cursor: pointer; transition: transform .1s; }
+.btn:active { transform: scale(.97); }
+.btn-cyan { background: var(--cyan); color: var(--navy); }
+.btn-outline { background: transparent; border: 1px solid rgba(255,255,255,.12);
+  color: rgba(245,240,232,.5); }
+.btn-red { background: var(--red); color: var(--warm); }
+.btn + .btn { margin-top: .5rem; }
+.status { text-align: center; font-size: .75rem; padding: .4rem .8rem; border-radius: 6px;
+  margin-bottom: .8rem; }
+.status.ok { background: rgba(42,157,143,.12); color: var(--green); }
+.status.warn { background: rgba(239,138,23,.12); color: var(--orange); }
+.status.err { background: rgba(230,57,70,.12); color: var(--red); }
+.status.info { background: rgba(0,180,216,.08); color: var(--cyan); }
+
+/* ── Join screen ── */
+.code-row { display: flex; gap: 8px; justify-content: center; margin: 1.2rem 0; }
+.code-digit { width: 48px; height: 56px; background: rgba(255,255,255,.04);
+  border: 1.5px solid rgba(255,255,255,.1); border-radius: 10px;
+  font-size: 1.6rem; font-weight: 600; color: var(--cyan); text-align: center;
+  font-family: 'SF Mono', 'Fira Code', monospace; outline: none; caret-color: var(--cyan); }
+.code-digit:focus { border-color: rgba(0,180,216,.5); background: rgba(0,180,216,.04); }
+.code-digit.filled { border-color: rgba(0,180,216,.3); }
+.or-divider { display: flex; align-items: center; gap: .5rem; margin: .6rem 0; }
+.or-divider hr { flex: 1; border: none; border-top: .5px solid rgba(255,255,255,.06); }
+.or-divider span { font-size: .65rem; opacity: .2; }
+.hint { text-align: center; font-size: .7rem; opacity: .3; }
+
+/* ── Permission screen ── */
+.perm-card { display: flex; align-items: center; gap: .7rem; padding: .7rem;
+  background: rgba(255,255,255,.03); border-radius: 8px; margin-bottom: .5rem;
+  border: .5px solid rgba(255,255,255,.06); }
+.perm-icon { width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: .9rem; flex-shrink: 0; }
+.perm-name { font-size: .8rem; font-weight: 500; }
+.perm-why { font-size: .65rem; opacity: .4; margin-top: 1px; }
+.perm-badge { font-size: .65rem; padding: 2px 8px; border-radius: 10px; font-weight: 500; margin-left: auto; flex-shrink: 0; }
+.perm-badge.wait { background: rgba(255,255,255,.05); color: rgba(245,240,232,.3); }
+.perm-badge.ok { background: rgba(42,157,143,.12); color: var(--green); }
+.perm-badge.fail { background: rgba(230,57,70,.12); color: var(--red); }
+
+/* ── Calibration screen ── */
+.calib-ring { width: 100px; height: 100px; margin: 1.5rem auto; border-radius: 50%;
+  border: 2px solid rgba(0,180,216,.15); display: flex; align-items: center;
+  justify-content: center; position: relative; }
+.calib-ring::after { content: ''; position: absolute; inset: 8px; border-radius: 50%;
+  border: 2px dashed rgba(0,180,216,.1); animation: spin 4s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.calib-pct { font-size: 1.5rem; font-weight: 600; color: var(--cyan); }
+.calib-info { text-align: center; font-size: .7rem; opacity: .35; margin-top: .5rem; }
+.calib-info.done { color: var(--green); opacity: .7; }
+
+/* ── Ready screen ── */
+.ready-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--green); margin-right: 6px; vertical-align: middle;
+  animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(42,157,143,.4); }
+  50% { box-shadow: 0 0 0 8px rgba(42,157,143,0); } }
+.info-grid { background: rgba(255,255,255,.03); border-radius: 8px; padding: .6rem .8rem;
+  margin: .8rem 0; border: .5px solid rgba(255,255,255,.06); }
+.info-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: .7rem; }
+.info-row .lbl { opacity: .35; }
+.info-row .val { font-weight: 500; font-variant-numeric: tabular-nums; }
+.info-row .val.cyan { color: var(--cyan); }
+.peers { display: flex; flex-wrap: wrap; gap: 4px; margin: .5rem 0; }
+.peer { width: 24px; height: 24px; border-radius: 50%; background: rgba(0,180,216,.1);
+  border: 1px solid rgba(0,180,216,.2); display: flex; align-items: center;
+  justify-content: center; font-size: .55rem; color: rgba(0,180,216,.6); font-weight: 600; }
+.peer.me { background: rgba(0,180,216,.25); border-color: rgba(0,180,216,.4); color: var(--cyan); }
+.wait-msg { text-align: center; font-size: .8rem; opacity: .5; margin: .8rem 0; line-height: 1.6; }
+
+/* ── Live screen ── */
+.readings { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .4rem; margin-bottom: .5rem; }
+.ax { background: rgba(255,255,255,.03); border-radius: 6px; padding: .4rem; text-align: center; }
+.ax-label { font-size: .55rem; text-transform: uppercase; letter-spacing: .08em; opacity: .3; }
+.ax-val { font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.canvas-wrap { flex: 1; min-height: 0; position: relative; border-radius: 8px; overflow: hidden;
+  background: rgba(255,255,255,.02); }
+.canvas-wrap canvas { width: 100%; height: 100%; display: block; }
+.countdown-overlay { position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; font-size: 4rem; font-weight: 700; color: var(--cyan);
+  background: rgba(10,15,60,.7); z-index: 10; display: none; }
+.rec-badge { display: none; position: absolute; top: 8px; right: 8px; padding: 3px 10px;
+  background: rgba(230,57,70,.15); color: var(--red); border-radius: 10px;
+  font-size: .6rem; font-weight: 600; z-index: 5; animation: recBlink 1s step-end infinite; }
+@keyframes recBlink { 50% { opacity: .3; } }
+</style>
+</head>
+<body>
+
+<!-- ═══ SCREEN 0: JOIN ═══ -->
+<div class="screen active" id="scr-join">
+  <div class="logo">sans<span>·</span>science</div>
+  <div class="sub">Kom til kernen — seismisk netværk</div>
+  <div class="title">Tilslut din seismograf</div>
+  <div class="desc">Indtast den 4-cifrede kode fra tavlen.</div>
+  <div class="code-row">
+    <input class="code-digit" id="d0" type="tel" maxlength="1" inputmode="numeric" autocomplete="off">
+    <input class="code-digit" id="d1" type="tel" maxlength="1" inputmode="numeric" autocomplete="off">
+    <input class="code-digit" id="d2" type="tel" maxlength="1" inputmode="numeric" autocomplete="off">
+    <input class="code-digit" id="d3" type="tel" maxlength="1" inputmode="numeric" autocomplete="off">
+  </div>
+  <div id="join-status" class="status info" style="display:none"></div>
+  <div class="spacer"></div>
+  <button class="btn btn-cyan" id="btn-join">Forbind</button>
+</div>
+
+<!-- ═══ SCREEN 1: PERMISSIONS ═══ -->
+<div class="screen" id="scr-perm">
+  <div class="logo">sans<span>·</span>science</div>
+  <div class="sub" id="perm-session-label">Session ...</div>
+  <div class="title">Tilladelser</div>
+  <div class="desc">Vi har brug for to sensorer for at din telefon kan virke som seismisk station.</div>
+
+  <div class="perm-card">
+    <div class="perm-icon" style="background:rgba(0,180,216,.08)">📳</div>
+    <div>
+      <div class="perm-name">Accelerometer</div>
+      <div class="perm-why">Registrerer vibrationer — din seismograf</div>
+    </div>
+    <div class="perm-badge wait" id="perm-acc-badge">Venter</div>
+  </div>
+
+  <div class="perm-card">
+    <div class="perm-icon" style="background:rgba(42,157,143,.08)">📍</div>
+    <div>
+      <div class="perm-name">Position</div>
+      <div class="perm-why">Placerer din station på kortet — kun én gang</div>
+    </div>
+    <div class="perm-badge wait" id="perm-gps-badge">Venter</div>
+  </div>
+
+  <div id="perm-error" class="status err" style="display:none"></div>
+  <div class="spacer"></div>
+  <button class="btn btn-cyan" id="btn-grant">Giv tilladelser</button>
+</div>
+
+<!-- ═══ SCREEN 2: CALIBRATION ═══ -->
+<div class="screen" id="scr-calib">
+  <div class="logo">sans<span>·</span>science</div>
+  <div class="sub" id="calib-session-label">Session ...</div>
+  <div class="title" style="text-align:center">Kalibrering</div>
+  <div class="desc" style="text-align:center">Læg telefonen fladt på bordet.<br>Rør den ikke.</div>
+  <div class="calib-ring">
+    <div class="calib-pct" id="calib-pct">0%</div>
+  </div>
+  <div class="calib-info" id="calib-noise">Måler støjniveau...</div>
+  <div class="calib-info" id="calib-sync">Tidssynkronisering: 0/8</div>
+  <div class="spacer"></div>
+</div>
+
+<!-- ═══ SCREEN 3: READY / LOBBY ═══ -->
+<div class="screen" id="scr-ready">
+  <div class="logo">sans<span>·</span>science</div>
+  <div class="sub" id="ready-session-label">Session ...</div>
+  <div style="text-align:center;margin:.8rem 0">
+    <span class="ready-dot"></span>
+    <span style="font-size:.85rem;color:var(--green);font-weight:500" id="ready-name">Station klar</span>
+  </div>
+  <div class="info-grid" id="station-info"></div>
+  <div class="desc" style="margin-top:.5rem">Forbundne stationer:</div>
+  <div class="peers" id="peers-list"></div>
+  <div class="wait-msg">Venter på at <strong>læreren starter</strong><br>optagelse...</div>
+  <div class="spacer"></div>
+  <button class="btn btn-outline" id="btn-disconnect" style="font-size:.75rem">Afbryd forbindelse</button>
+</div>
+
+<!-- ═══ SCREEN 4: LIVE SEISMOGRAM ═══ -->
+<div class="screen" id="scr-live">
+  <div class="status ok" id="live-status">Station aktiv</div>
+  <div class="readings">
+    <div class="ax"><div class="ax-label">X</div><div class="ax-val" id="lv-x">—</div></div>
+    <div class="ax"><div class="ax-label">Y</div><div class="ax-val" id="lv-y">—</div></div>
+    <div class="ax"><div class="ax-label">Z</div><div class="ax-val" id="lv-z">—</div></div>
+  </div>
+  <div class="canvas-wrap">
+    <canvas id="seismo-canvas"></canvas>
+    <div class="countdown-overlay" id="countdown-overlay"></div>
+    <div class="rec-badge" id="rec-badge">OPTAGELSE</div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════
+let ws = null;
+let sessionCode = '';
+let stationId = '';
+let stationName = '';
+let stationNumber = 0;
+let gpsLat = null, gpsLng = null;
+let timeOffset = 0;
+let noiseFloor = 0;
+let sampleRate = 0;
+let isRecording = false;
+
+// High-pass filter state
+let prevFiltered = 0;
+let prevRaw = 0;
+const ALPHA = 0.95; // High-pass filter coefficient (~0.5 Hz cutoff at 60 Hz)
+
+// STA/LTA trigger
+let sta = 0, lta = 0.1;
+const STA_LEN = 0.5;  // seconds
+const LTA_LEN = 10;   // seconds
+let triggered = false;
+
+// Seismogram data
+const samples = [];
+const MAX_SAMPLES = 600;
+
+// ═══════════════════════════════════════════════════════════
+// SCREEN MANAGEMENT
+// ═══════════════════════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (id === 'scr-live') initCanvas();
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCREEN 0: JOIN
+// ═══════════════════════════════════════════════════════════
+const digits = [0,1,2,3].map(i => document.getElementById('d' + i));
+
+// Pre-fill fra URL-parameter
+const urlCode = new URLSearchParams(location.search).get('code');
+if (urlCode && urlCode.length === 4) {
+  urlCode.split('').forEach((c, i) => { digits[i].value = c; digits[i].classList.add('filled'); });
+}
+
+// Auto-advance og backspace i kodeinput
+digits.forEach((d, i) => {
+  d.addEventListener('input', () => {
+    d.value = d.value.replace(/\D/g, '').slice(-1);
+    if (d.value) { d.classList.add('filled'); if (i < 3) digits[i + 1].focus(); }
+  });
+  d.addEventListener('keydown', (e) => {
+    if (e.key === 'Backspace' && !d.value && i > 0) { digits[i - 1].focus(); digits[i - 1].value = ''; digits[i - 1].classList.remove('filled'); }
+  });
+});
+digits[0].focus();
+
+document.getElementById('btn-join').addEventListener('click', () => {
+  const code = digits.map(d => d.value).join('');
+  if (code.length !== 4) {
+    showJoinStatus('Indtast 4 cifre', 'warn'); return;
+  }
+  connectToSession(code);
+});
+
+function showJoinStatus(msg, type) {
+  const el = document.getElementById('join-status');
+  el.textContent = msg; el.className = 'status ' + type; el.style.display = '';
+}
+
+// ═══════════════════════════════════════════════════════════
+// WEBSOCKET CONNECTION
+// ═══════════════════════════════════════════════════════════
+function connectToSession(code) {
+  showJoinStatus('Forbinder...', 'info');
+  sessionCode = code;
+
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws?code=${code}&role=station`);
+
+  ws.onopen = () => {
+    showJoinStatus('Forbundet!', 'ok');
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+
+  ws.onerror = () => {
+    showJoinStatus('Forbindelsesfejl', 'err');
+  };
+
+  ws.onclose = () => {
+    if (isRecording) {
+      document.getElementById('live-status').textContent = 'Forbindelse tabt — genopretter...';
+      document.getElementById('live-status').className = 'status warn';
+      setTimeout(() => connectToSession(sessionCode), 2000);
+    }
+  };
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'welcome':
+      stationId = msg.id;
+      stationName = msg.name;
+      stationNumber = parseInt(msg.name.replace('S', ''));
+      showScreen('scr-perm');
+      document.getElementById('perm-session-label').textContent = 'Session ' + sessionCode;
+      document.getElementById('calib-session-label').textContent = 'Session ' + sessionCode;
+      document.getElementById('ready-session-label').textContent = 'Session ' + sessionCode;
+      break;
+
+    case 'error':
+      showJoinStatus(msg.message, 'err');
+      break;
+
+    case 'station:joined':
+    case 'station:left':
+    case 'station:ready':
+      updatePeers(msg);
+      break;
+
+    case 'countdown':
+      startCountdown(msg.duration);
+      break;
+
+    case 'recording:start':
+      startRecording();
+      break;
+
+    case 'recording:stop':
+      stopRecording();
+      break;
+
+    case 'session:reset':
+      isRecording = false;
+      showScreen('scr-ready');
+      break;
+
+  }
+}
+
+function send(msg) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCREEN 1: PERMISSIONS
+// ═══════════════════════════════════════════════════════════
+document.getElementById('btn-grant').addEventListener('click', requestPermissions);
+
+async function requestPermissions() {
+  const accBadge = document.getElementById('perm-acc-badge');
+  const gpsBadge = document.getElementById('perm-gps-badge');
+  const errEl = document.getElementById('perm-error');
+  errEl.style.display = 'none';
+
+  // 1. Accelerometer
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      const perm = await DeviceMotionEvent.requestPermission();
+      if (perm !== 'granted') throw new Error('Afvist');
+    }
+    accBadge.textContent = 'Tilladt';
+    accBadge.className = 'perm-badge ok';
+  } catch (err) {
+    accBadge.textContent = 'Afvist';
+    accBadge.className = 'perm-badge fail';
+    errEl.textContent = 'Accelerometer kræves. Prøv igen eller tjek indstillinger.';
+    errEl.style.display = '';
+    return;
+  }
+
+  // 2. GPS
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true, timeout: 10000
+      });
+    });
+    gpsLat = pos.coords.latitude;
+    gpsLng = pos.coords.longitude;
+    gpsBadge.textContent = 'Tilladt';
+    gpsBadge.className = 'perm-badge ok';
+  } catch (err) {
+    // GPS er optional — vi kan fortsætte uden
+    gpsBadge.textContent = 'Ikke tilg.';
+    gpsBadge.className = 'perm-badge fail';
+    gpsLat = 55.68 + Math.random() * 0.01; // fallback
+    gpsLng = 9.55 + Math.random() * 0.01;
+  }
+
+  setTimeout(() => startCalibration(), 400);
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCREEN 2: CALIBRATION + TIME SYNC
+// ═══════════════════════════════════════════════════════════
+function startCalibration() {
+  showScreen('scr-calib');
+
+  const noiseEl = document.getElementById('calib-noise');
+  const syncEl = document.getElementById('calib-sync');
+  const pctEl = document.getElementById('calib-pct');
+
+  let calibSamples = [];
+  let calibDone = false;
+  let syncDone = false;
+  let syncCount = 0;
+  const SYNC_TOTAL = 8;
+  const syncOffsets = [];
+
+  // Samle accelerometer-data for støjmåling
+  function onMotion(e) {
+    const acc = e.accelerationIncludingGravity;
+    if (!acc) return;
+    calibSamples.push({ z: acc.z || 0, t: performance.now() });
+  }
+  window.addEventListener('devicemotion', onMotion);
+
+  // Tidssynkronisering
+  function doSyncPing() {
+    if (syncCount >= SYNC_TOTAL) return;
+    send({ type: 'sync:ping', clientSend: Date.now() });
+  }
+
+  // Lyt efter sync-pongs midlertidigt via global handler
+  const origHandler = handleMessage;
+  const syncHandler = (msg) => {
+    if (msg.type === 'sync:pong') {
+      const clientRecv = Date.now();
+      const rtt = (clientRecv - msg.clientSend) - (msg.serverSend - msg.serverRecv);
+      const offset = ((msg.serverRecv - msg.clientSend) + (msg.serverSend - clientRecv)) / 2;
+      syncOffsets.push(offset);
+      syncCount++;
+      syncEl.textContent = `Tidssynkronisering: ${syncCount}/${SYNC_TOTAL}`;
+
+      if (syncCount < SYNC_TOTAL) {
+        setTimeout(doSyncPing, 100);
+      } else {
+        // Brug median offset
+        syncOffsets.sort((a, b) => a - b);
+        timeOffset = syncOffsets[Math.floor(syncOffsets.length / 2)];
+        syncEl.textContent = `Synkroniseret: offset ${timeOffset > 0 ? '+' : ''}${Math.round(timeOffset)} ms`;
+        syncEl.classList.add('done');
+        syncDone = true;
+        checkCalibComplete();
+      }
+    } else {
+      origHandler(msg);
+    }
+  };
+  // Monkey-patch message handler midlertidigt
+  ws.onmessage = (e) => syncHandler(JSON.parse(e.data));
+
+  doSyncPing();
+
+  // Progress + støjmåling
+  let progress = 0;
+  const progressIv = setInterval(() => {
+    progress += 3 + Math.random() * 4;
+    if (progress > 100) progress = 100;
+    pctEl.textContent = Math.round(progress) + '%';
+
+    if (progress >= 100 && !calibDone) {
+      calibDone = true;
+      clearInterval(progressIv);
+      window.removeEventListener('devicemotion', onMotion);
+
+      // Beregn støjniveau (std af Z-akse)
+      if (calibSamples.length > 10) {
+        const zVals = calibSamples.map(s => s.z);
+        const mean = zVals.reduce((a, b) => a + b, 0) / zVals.length;
+        const variance = zVals.reduce((a, z) => a + (z - mean) ** 2, 0) / zVals.length;
+        noiseFloor = Math.sqrt(variance);
+
+        // Estimér samplingrate
+        const dt = (calibSamples[calibSamples.length - 1].t - calibSamples[0].t) / 1000;
+        sampleRate = Math.round(calibSamples.length / dt);
+      } else {
+        noiseFloor = 0.05;
+        sampleRate = 60;
+      }
+
+      noiseEl.textContent = `Støjniveau: ${noiseFloor.toFixed(3)} m/s²`;
+      noiseEl.classList.add('done');
+      checkCalibComplete();
+    }
+  }, 200);
+
+  function checkCalibComplete() {
+    if (!calibDone || !syncDone) return;
+
+    // Gendan normal message handler
+    ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+
+    // Send metadata til server
+    send({
+      type: 'station:ready',
+      lat: gpsLat, lng: gpsLng,
+      hz: sampleRate, noise: noiseFloor.toFixed(3),
+      offset: Math.round(timeOffset)
+    });
+
+    setTimeout(() => {
+      showScreen('scr-ready');
+      document.getElementById('ready-name').textContent = stationName + ' klar';
+      document.getElementById('station-info').innerHTML = `
+        <div class="info-row"><span class="lbl">Station</span><span class="val">${stationName}</span></div>
+        <div class="info-row"><span class="lbl">Position</span><span class="val">${gpsLat?.toFixed(3)}°N, ${gpsLng?.toFixed(3)}°Ø</span></div>
+        <div class="info-row"><span class="lbl">Samplingrate</span><span class="val cyan">${sampleRate} Hz</span></div>
+        <div class="info-row"><span class="lbl">Tids-offset</span><span class="val">${timeOffset > 0 ? '+' : ''}${Math.round(timeOffset)} ms</span></div>
+        <div class="info-row"><span class="lbl">Støjniveau</span><span class="val">${noiseFloor.toFixed(3)} m/s²</span></div>
+      `;
+      startAccelerometerStream();
+    }, 600);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCREEN 3: READY / PEERS
+// ═══════════════════════════════════════════════════════════
+let peerCount = 1;
+function updatePeers(msg) {
+  if (msg.count) peerCount = msg.count;
+  const el = document.getElementById('peers-list');
+  el.innerHTML = '';
+  for (let i = 1; i <= peerCount; i++) {
+    const d = document.createElement('div');
+    d.className = 'peer' + (i === stationNumber ? ' me' : '');
+    d.textContent = i;
+    el.appendChild(d);
+  }
+}
+
+document.getElementById('btn-disconnect').addEventListener('click', () => {
+  if (ws) ws.close();
+  ws = null;
+  isRecording = false;
+  showScreen('scr-join');
+});
+
+// ═══════════════════════════════════════════════════════════
+// ACCELEROMETER STREAM (løber hele tiden efter kalibrering)
+// ═══════════════════════════════════════════════════════════
+let batchBuffer = [];
+let lastSendTime = 0;
+const SEND_INTERVAL = 50; // ms (20 pakker/sek)
+
+function startAccelerometerStream() {
+  window.addEventListener('devicemotion', onLiveMotion);
+}
+
+function onLiveMotion(e) {
+  const acc = e.accelerationIncludingGravity;
+  if (!acc) return;
+
+  const rawZ = acc.z || 0;
+
+  // High-pass filter: y[n] = α * (y[n-1] + x[n] - x[n-1])
+  const hpFiltered = ALPHA * (prevFiltered + rawZ - prevRaw);
+  prevRaw = rawZ;
+  prevFiltered = hpFiltered;
+
+  const absVal = Math.abs(hpFiltered);
+
+  // STA/LTA trigger
+  const dt = 1 / Math.max(sampleRate, 30);
+  sta = sta + (absVal - sta) * (dt / STA_LEN);
+  lta = lta + (absVal - lta) * (dt / LTA_LEN);
+  const ratio = lta > 0.001 ? sta / lta : 0;
+
+  if (ratio > 3 && !triggered) {
+    triggered = true;
+    send({ type: 'trigger', t: Date.now() + timeOffset, amplitude: absVal });
+    setTimeout(() => { triggered = false; }, 2000);
+  }
+
+  // Opsaml til seismogram
+  samples.push(hpFiltered);
+  if (samples.length > MAX_SAMPLES) samples.shift();
+
+  // Opdater UI
+  if (document.getElementById('scr-live').classList.contains('active')) {
+    document.getElementById('lv-x').textContent = (acc.x || 0).toFixed(2);
+    document.getElementById('lv-y').textContent = (acc.y || 0).toFixed(2);
+    document.getElementById('lv-z').textContent = rawZ.toFixed(2);
+  }
+
+  // Batch og send data
+  batchBuffer.push({ t: Date.now() + timeOffset, z: hpFiltered });
+  const now = performance.now();
+  if (now - lastSendTime > SEND_INTERVAL && batchBuffer.length > 0 && isRecording) {
+    const peak = Math.max(...batchBuffer.map(s => Math.abs(s.z)));
+    const avg = batchBuffer.reduce((a, s) => a + s.z, 0) / batchBuffer.length;
+    send({
+      type: 'data',
+      t: batchBuffer[Math.floor(batchBuffer.length / 2)].t,
+      z: Math.round(avg * 1000) / 1000,
+      peak: Math.round(peak * 1000) / 1000
+    });
+    batchBuffer = [];
+    lastSendTime = now;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// SCREEN 4: LIVE SEISMOGRAM
+// ═══════════════════════════════════════════════════════════
+let canvas, ctx;
+
+function initCanvas() {
+  canvas = document.getElementById('seismo-canvas');
+  ctx = canvas.getContext('2d');
+  resizeCanvas();
+  drawLoop();
+}
+
+function resizeCanvas() {
+  if (!canvas) return;
+  const wrap = canvas.parentElement;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = wrap.clientWidth * dpr;
+  canvas.height = wrap.clientHeight * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+window.addEventListener('resize', resizeCanvas);
+
+function drawLoop() {
+  if (!canvas) return;
+  requestAnimationFrame(drawLoop);
+  const w = canvas.parentElement.clientWidth;
+  const h = canvas.parentElement.clientHeight;
+  const mid = h / 2;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,.04)';
+  ctx.lineWidth = 0.5;
+  for (let i = 1; i <= 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, mid + h / 10 * i); ctx.lineTo(w, mid + h / 10 * i);
+    ctx.moveTo(0, mid - h / 10 * i); ctx.lineTo(w, mid - h / 10 * i);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.1)';
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+
+  if (samples.length < 2) return;
+
+  const maxAbs = Math.max(...samples.map(Math.abs), 0.3);
+  const scale = maxAbs * 1.2;
+  const pxPerSample = w / MAX_SAMPLES;
+
+  // Trace
+  ctx.strokeStyle = isRecording ? '#e63946' : '#00b4d8';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < samples.length; i++) {
+    const x = (MAX_SAMPLES - samples.length + i) * pxPerSample;
+    const y = mid - (samples[i] / scale) * (h * 0.4);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Fill
+  ctx.fillStyle = isRecording ? 'rgba(230,57,70,.06)' : 'rgba(0,180,216,.06)';
+  ctx.beginPath();
+  for (let i = 0; i < samples.length; i++) {
+    const x = (MAX_SAMPLES - samples.length + i) * pxPerSample;
+    const y = mid - (samples[i] / scale) * (h * 0.4);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.lineTo(w, mid); ctx.lineTo(0, mid); ctx.closePath(); ctx.fill();
+
+  // Scale
+  ctx.fillStyle = 'rgba(255,255,255,.2)';
+  ctx.font = '10px sans-serif';
+  ctx.fillText(`±${scale.toFixed(2)} m/s²`, 4, 14);
+}
+
+// ═══════════════════════════════════════════════════════════
+// COUNTDOWN + RECORDING
+// ═══════════════════════════════════════════════════════════
+function startCountdown(duration) {
+  showScreen('scr-live');
+  const overlay = document.getElementById('countdown-overlay');
+  overlay.style.display = 'flex';
+  let t = duration;
+  overlay.textContent = t;
+  const iv = setInterval(() => {
+    t--;
+    if (t > 0) { overlay.textContent = t; }
+    else if (t === 0) { overlay.textContent = 'HOP!'; }
+    else { clearInterval(iv); overlay.style.display = 'none'; }
+  }, 1000);
+}
+
+function startRecording() {
+  isRecording = true;
+  showScreen('scr-live');
+  document.getElementById('rec-badge').style.display = '';
+  document.getElementById('live-status').textContent = `${stationName} — optagelse`;
+  document.getElementById('live-status').className = 'status warn';
+}
+
+function stopRecording() {
+  isRecording = false;
+  document.getElementById('rec-badge').style.display = 'none';
+  document.getElementById('live-status').textContent = `${stationName} — optagelse afsluttet`;
+  document.getElementById('live-status').className = 'status ok';
+}
+
+// Auto-join hvis kode er i URL
+if (urlCode && urlCode.length === 4) {
+  setTimeout(() => connectToSession(urlCode), 300);
+}
+</script>
+</body>
+</html>
