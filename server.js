@@ -50,8 +50,15 @@ function stationList(session) {
   }));
 }
 
+// PUBLIC_BASE_URL: sættes i prod via PM2 (fx "https://geo.sg.dk/seismograf").
+// Bruges til at konstruere korrekte URLer bag reverse-proxy med path-prefix.
+const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+
 // ─── REST ───────────────────────────────────────────────
 app.get('/api/info', (req, res) => {
+  if (PUBLIC_BASE_URL) {
+    return res.json({ host: PUBLIC_BASE_URL.replace(/^https?:\/\//, '') });
+  }
   const nets = require('os').networkInterfaces();
   let ip = req.headers.host || 'localhost';
   for (const iface of Object.values(nets))
@@ -80,10 +87,15 @@ app.post('/api/session', (req, res) => {
 app.get('/api/session/:code/qr', async (req, res) => {
   const s = getSession(req.params.code);
   if (!s) return res.status(404).json({ error: 'Ikke fundet' });
-  const host = req.query.host || req.headers.host;
-  const isLocal = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
-  const proto = isLocal ? 'http' : 'https';
-  const url = proto + '://' + host + '/station.html?code=' + s.code;
+  let url;
+  if (PUBLIC_BASE_URL) {
+    url = PUBLIC_BASE_URL + '/station.html?code=' + s.code;
+  } else {
+    const host = req.query.host || req.headers.host;
+    const isLocal = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
+    const proto = isLocal ? 'http' : 'https';
+    url = proto + '://' + host + '/station.html?code=' + s.code;
+  }
   try {
     const svg = await QRCode.toString(url, { type: 'svg', margin: 1 });
     res.json({ svg, url });

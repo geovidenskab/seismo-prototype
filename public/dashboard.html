@@ -6,10 +6,10 @@
 <title>Dashboard — Seismisk netværk</title>
 
 <!-- PWA -->
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0a0f3c">
-<link rel="icon" type="image/svg+xml" href="/icon.svg">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
 <style>
 :root { --navy: #0a0f3c; --warm: #f5f0e8; --sand: #e8dfd0; --cyan: #00b4d8;
   --red: #e63946; --green: #2a9d8f; --orange: #ef8a17; }
@@ -366,6 +366,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 
 <script>
 // ═══════════════════════════════════════════════════════════
+// PATH-PREFIX (virker baade lokalt og bag /seismograf/ reverse-proxy)
+// ═══════════════════════════════════════════════════════════
+const BASE = location.pathname.replace(/\/[^/]*$/, '/');
+const apiUrl  = (p) => BASE + 'api/' + p.replace(/^\//, '');
+const wsUrl   = (q) => (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + BASE + 'ws' + q;
+
+// ═══════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════
 let ws = null;
@@ -413,7 +420,7 @@ document.querySelectorAll('.mode-card').forEach(card => {
 async function createSession(mode) {
   sessionMode = mode === 'silent' ? 'silent' : 'wavespeed';
 
-  const res = await fetch('/api/session', {
+  const res = await fetch(apiUrl('session'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ mode: sessionMode })
@@ -422,9 +429,9 @@ async function createSession(mode) {
   sessionCode = data.code;
 
   // Hent QR med netværks-IP så telefoner på samme wifi kan scanne
-  const infoRes = await fetch('/api/info');
+  const infoRes = await fetch(apiUrl('info'));
   const info = await infoRes.json();
-  const qrRes = await fetch(`/api/session/${data.code}/qr?host=${info.host}`);
+  const qrRes = await fetch(apiUrl(`session/${data.code}/qr?host=${info.host}`));
   const qrData = await qrRes.json();
   silentLastQrUrl = qrData.url;
 
@@ -457,8 +464,7 @@ async function createSession(mode) {
 // WEBSOCKET
 // ═══════════════════════════════════════════════════════════
 function connectDashboard(code) {
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws?code=${code}&role=dashboard`);
+  ws = new WebSocket(wsUrl(`?code=${code}&role=dashboard`));
   ws.onmessage = e => handleMsg(JSON.parse(e.data));
   ws.onclose = () => setTimeout(() => connectDashboard(code), 2000);
 }
@@ -899,7 +905,7 @@ function setDashState(state) {
 }
 
 async function apiControl(action, extra = {}) {
-  await fetch(`/api/session/${sessionCode}/control`, {
+  await fetch(apiUrl(`session/${sessionCode}/control`), {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...extra })
   });
