@@ -235,6 +235,10 @@ let prevRaw = 0;
 const ALPHA_WAVESPEED = 0.95; // ~0.5 Hz cutoff — fanger triggers
 const ALPHA_SILENT    = 0.50; // mild high-pass — fanger også langsommere bevægelser
 
+// Dynamiske parametre (kan styres fra dashboard via 'station:settings'-beskeder)
+let currentAlpha = ALPHA_SILENT;
+let currentSendInterval = 50;
+
 // STA/LTA trigger
 let sta = 0, lta = 0.1;
 const STA_LEN = 0.5;  // seconds
@@ -331,10 +335,20 @@ function handleMessage(msg) {
       stationName = msg.name;
       stationNumber = parseInt(msg.name.replace('S', ''));
       sessionMode = msg.mode || 'wavespeed';
+      currentAlpha = sessionMode === 'silent' ? ALPHA_SILENT : ALPHA_WAVESPEED;
       showScreen('scr-perm');
       document.getElementById('perm-session-label').textContent = 'Session ' + sessionCode;
       document.getElementById('calib-session-label').textContent = 'Session ' + sessionCode;
       document.getElementById('ready-session-label').textContent = 'Session ' + sessionCode;
+      break;
+
+    case 'station:settings':
+      if (typeof msg.alpha === 'number' && isFinite(msg.alpha)) {
+        currentAlpha = Math.max(0.05, Math.min(0.99, msg.alpha));
+      }
+      if (typeof msg.sendInterval === 'number' && isFinite(msg.sendInterval)) {
+        currentSendInterval = Math.max(20, Math.min(500, msg.sendInterval));
+      }
       break;
 
     case 'error':
@@ -618,9 +632,8 @@ function onLiveMotion(e) {
     return;
   }
 
-  // Mode-afhængigt high-pass-filter
-  const alpha = sessionMode === 'silent' ? ALPHA_SILENT : ALPHA_WAVESPEED;
-  const hpFiltered = alpha * (prevFiltered + rawZ - prevRaw);
+  // High-pass-filter (α kan styres fra dashboard via 'station:settings')
+  const hpFiltered = currentAlpha * (prevFiltered + rawZ - prevRaw);
   prevRaw = rawZ;
   prevFiltered = hpFiltered;
 
@@ -659,7 +672,7 @@ function onLiveMotion(e) {
   batchBuffer.push({ t: Date.now() + timeOffset, z: hpFiltered });
   const now = performance.now();
   const shouldSend = sessionMode === 'silent' || isRecording;
-  if (now - lastSendTime > SEND_INTERVAL && batchBuffer.length > 0 && shouldSend) {
+  if (now - lastSendTime > currentSendInterval && batchBuffer.length > 0 && shouldSend) {
     const peak = Math.max(...batchBuffer.map(s => Math.abs(s.z)));
     const avg = batchBuffer.reduce((a, s) => a + s.z, 0) / batchBuffer.length;
     send({

@@ -167,6 +167,12 @@ wss.on('connection', (ws, req) => {
         session.recording = false;
         broadcastToRoom(code, { type: 'recording-stopped' });
       }
+      // Indstillinger fra dashboard videresendes til alle stationer
+      if (msg.type === 'station:settings') {
+        session.stations.forEach(stationWs => {
+          if (stationWs.readyState === 1) stationWs.send(JSON.stringify(msg));
+        });
+      }
     });
     return;
   }

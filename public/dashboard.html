@@ -155,10 +155,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .silent-qr-btn { background: rgba(0,180,216,.1); color: var(--cyan);
   border: 1px solid rgba(0,180,216,.25); padding: .35rem .8rem; border-radius: 8px;
   font-size: .7rem; cursor: pointer; font-weight: 500; }
-.silent-qr-popup { position: fixed; top: 64px; right: 14px; background: var(--navy);
-  border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 1rem;
-  z-index: 100; box-shadow: 0 12px 40px rgba(0,0,0,.6); display: none; }
-.silent-qr-popup.show { display: block; }
+.silent-qr-popup, .silent-settings-popup { position: fixed; top: 64px; right: 14px;
+  background: var(--navy); border: 1px solid rgba(255,255,255,.14); border-radius: 14px;
+  padding: 1rem; z-index: 100; box-shadow: 0 12px 40px rgba(0,0,0,.6); display: none; }
+.silent-qr-popup.show, .silent-settings-popup.show { display: block; }
 .silent-qr-popup .qr-wrap { width: 200px; height: 200px; background: white;
   border-radius: 10px; display: flex; align-items: center; justify-content: center;
   margin-bottom: .6rem; }
@@ -200,7 +200,40 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .silent-controls .live-indicator.paused::before { background: var(--orange); animation: none; }
 @keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
-.silent-zoom-group { display: inline-flex; align-items: center; gap: .35rem;
+/* Settings-popup */
+.silent-settings-popup { min-width: 280px; padding: 1.1rem 1.2rem; }
+.silent-settings-popup h4 { font-size: .75rem; font-weight: 600; opacity: .8;
+  margin-bottom: .6rem; letter-spacing: .04em; text-transform: uppercase; }
+.silent-set-row { margin-bottom: .9rem; }
+.silent-set-row:last-child { margin-bottom: 0; }
+.silent-set-label { display: flex; justify-content: space-between; align-items: center;
+  font-size: .72rem; opacity: .65; margin-bottom: .35rem; }
+.silent-set-label .val { color: var(--cyan); font-variant-numeric: tabular-nums;
+  font-weight: 600; }
+.silent-set-row input[type=range] { width: 100%; accent-color: var(--cyan);
+  background: rgba(255,255,255,.06); height: 4px; border-radius: 4px; }
+.silent-set-row select { width: 100%; background: rgba(255,255,255,.05);
+  color: var(--warm); border: 1px solid rgba(255,255,255,.1); border-radius: 6px;
+  padding: .35rem .5rem; font-size: .75rem; }
+.silent-set-toggle { display: flex; align-items: center; gap: .5rem; cursor: pointer;
+  user-select: none; font-size: .75rem; opacity: .8; }
+.silent-set-toggle input { accent-color: var(--cyan); }
+.silent-set-hint { font-size: .62rem; opacity: .35; margin-top: .25rem;
+  line-height: 1.4; }
+
+/* Magnitude-display i header */
+.silent-mag { display: flex; align-items: baseline; gap: .35rem;
+  padding: .2rem .6rem; border-radius: 8px; background: rgba(0,180,216,.07);
+  border: 1px solid rgba(0,180,216,.15); }
+.silent-mag-num { font-family: Georgia, serif; font-size: 1.4rem; font-weight: 600;
+  color: var(--cyan); font-variant-numeric: tabular-nums; min-width: 2.6rem;
+  text-align: right; line-height: 1; }
+.silent-mag-label { font-size: .7rem; opacity: .7; min-width: 4.5rem;
+  text-transform: lowercase; letter-spacing: .02em; }
+.silent-mag-sub { font-size: .55rem; opacity: .4; text-transform: uppercase;
+  letter-spacing: .08em; margin-left: -.15rem; }
+
+
   padding: 0 .3rem; border-left: 1px solid rgba(255,255,255,.08);
   border-right: 1px solid rgba(255,255,255,.08); margin: 0 .2rem; }
 .silent-zoom-btn { padding: .4rem .7rem !important; font-size: .85rem !important;
@@ -309,7 +342,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <div class="silent-info">
       <span class="silent-code" id="s-code">—</span>
       <span class="silent-station-state" id="s-station-state">Venter på station</span>
-      <span class="silent-stat" id="s-amp">— m/s²</span>
+      <div class="silent-mag" id="s-mag" title="Klasse-magnitude: log₁₀(peak / støjniveau)">
+        <span class="silent-mag-sub">M</span>
+        <span class="silent-mag-num" id="s-mag-num">—</span>
+        <span class="silent-mag-label" id="s-mag-label">stille</span>
+      </div>
+      <button class="silent-qr-btn" id="s-settings-btn" title="Indstillinger">⚙</button>
       <button class="silent-qr-btn" id="s-qr-btn">Vis QR</button>
     </div>
   </div>
@@ -317,6 +355,47 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   <div class="silent-qr-popup" id="s-qr-popup">
     <div class="qr-wrap" id="s-qr-mini"></div>
     <div class="join-url" id="s-url-mini"></div>
+  </div>
+
+  <div class="silent-settings-popup" id="s-settings-popup">
+    <h4>Indstillinger</h4>
+
+    <div class="silent-set-row">
+      <div class="silent-set-label">
+        <span>Følsomhed (high-pass α)</span>
+        <span class="val" id="s-set-alpha-val">0.50</span>
+      </div>
+      <input type="range" id="s-set-alpha" min="0.10" max="0.95" step="0.05" value="0.50">
+      <div class="silent-set-hint">Lav = fanger langsomme udsving og drift · Høj = kun hurtige rystelser</div>
+    </div>
+
+    <div class="silent-set-row">
+      <div class="silent-set-label">
+        <span>Send-frekvens fra telefon</span>
+        <span class="val" id="s-set-rate-val">20 Hz</span>
+      </div>
+      <select id="s-set-rate">
+        <option value="25">40 Hz (25 ms)</option>
+        <option value="50" selected>20 Hz (50 ms)</option>
+        <option value="100">10 Hz (100 ms)</option>
+        <option value="200">5 Hz (200 ms)</option>
+      </select>
+      <div class="silent-set-hint">Hyppigere = mere detalje, flere pakker. Sjældnere = mere robust på dårligt netværk.</div>
+    </div>
+
+    <div class="silent-set-row">
+      <label class="silent-set-toggle">
+        <input type="checkbox" id="s-set-noise-zone" checked>
+        <span>Vis støj-zone (grå skygge ved ±støjniveau)</span>
+      </label>
+    </div>
+
+    <div class="silent-set-row">
+      <label class="silent-set-toggle">
+        <input type="checkbox" id="s-set-mag" checked>
+        <span>Vis klasse-magnitude i header</span>
+      </label>
+    </div>
   </div>
 
   <div class="silent-main" id="s-main">
@@ -420,6 +499,19 @@ let silentLastQrUrl = '';
 const SILENT_RECENT_WINDOW_MS = 3000; // auto-skala fokuserer på sidste 3 sek i live
 const SILENT_EMA_FAST = 0.30;         // når skalaen skal UP (snap hurtigt)
 const SILENT_EMA_SLOW = 0.10;         // når skalaen skal NED (afspænd langsommere så øjet kan følge)
+
+// Station-metadata (sættes når station:ready modtages)
+let silentNoiseFloor = 0;             // m/s² — fra station-kalibrering, bruges til magnitude + støj-zone
+let silentSampleRate = 20;
+
+// Indstillinger (sendes til station via 'station:settings')
+let silentAlpha = 0.50;
+let silentSendInterval = 50;
+let silentShowNoiseZone = true;
+let silentShowMag = true;
+
+// Klasse-magnitude (EMA-smoothed peak / noiseFloor)
+let silentPeakSmoothed = 0;
 
 // ── Review state ──
 let rvViewStart = 0;   // ms relative to recStartTime
@@ -965,14 +1057,52 @@ function initSilentMode() {
   // QR-toggle
   document.getElementById('s-qr-btn').addEventListener('click', () => {
     document.getElementById('s-qr-popup').classList.toggle('show');
+    document.getElementById('s-settings-popup').classList.remove('show');
   });
+  // Settings-toggle
+  document.getElementById('s-settings-btn').addEventListener('click', () => {
+    document.getElementById('s-settings-popup').classList.toggle('show');
+    document.getElementById('s-qr-popup').classList.remove('show');
+  });
+  // Klik udenfor lukker begge popups
   document.addEventListener('click', (e) => {
-    const popup = document.getElementById('s-qr-popup');
-    const btn = document.getElementById('s-qr-btn');
-    if (popup.classList.contains('show') &&
-        !popup.contains(e.target) && e.target !== btn) {
-      popup.classList.remove('show');
+    const qrPop = document.getElementById('s-qr-popup');
+    const qrBtn = document.getElementById('s-qr-btn');
+    const stPop = document.getElementById('s-settings-popup');
+    const stBtn = document.getElementById('s-settings-btn');
+    if (qrPop.classList.contains('show') &&
+        !qrPop.contains(e.target) && e.target !== qrBtn) {
+      qrPop.classList.remove('show');
     }
+    if (stPop.classList.contains('show') &&
+        !stPop.contains(e.target) && e.target !== stBtn) {
+      stPop.classList.remove('show');
+    }
+  });
+
+  // Indstillinger-controls
+  const alphaSlider = document.getElementById('s-set-alpha');
+  const alphaVal = document.getElementById('s-set-alpha-val');
+  alphaSlider.addEventListener('input', () => {
+    silentAlpha = parseFloat(alphaSlider.value);
+    alphaVal.textContent = silentAlpha.toFixed(2);
+  });
+  alphaSlider.addEventListener('change', silentSendSettings);
+
+  const rateSel = document.getElementById('s-set-rate');
+  const rateVal = document.getElementById('s-set-rate-val');
+  rateSel.addEventListener('change', () => {
+    silentSendInterval = parseInt(rateSel.value);
+    rateVal.textContent = Math.round(1000 / silentSendInterval) + ' Hz';
+    silentSendSettings();
+  });
+
+  document.getElementById('s-set-noise-zone').addEventListener('change', (e) => {
+    silentShowNoiseZone = e.target.checked;
+  });
+  document.getElementById('s-set-mag').addEventListener('change', (e) => {
+    silentShowMag = e.target.checked;
+    document.getElementById('s-mag').style.display = silentShowMag ? '' : 'none';
   });
 
   // Start/Pause/Live-knapper
@@ -1082,6 +1212,14 @@ function silentSetStation(stationMsg) {
     stateEl.textContent = silentStationName + ' lytter';
     stateEl.className = 'silent-station-state ready';
     waitEl.style.display = 'none';
+    // Gem station-metadata til magnitude + støj-zone
+    if (typeof stationMsg.noise !== 'undefined') {
+      const n = parseFloat(stationMsg.noise);
+      if (isFinite(n) && n > 0) silentNoiseFloor = n;
+    }
+    if (typeof stationMsg.hz !== 'undefined') silentSampleRate = stationMsg.hz;
+    // Synkronisér aktuelle indstillinger til denne station (i tilfælde af reconnect)
+    silentSendSettings();
   }
 }
 
@@ -1092,8 +1230,45 @@ function silentPushData(msg) {
   silentBuffer.push({ t, z });
   if (silentBuffer.length > SILENT_BUFFER_MAX) silentBuffer.shift();
 
-  // Opdater amp-stat tekst
-  document.getElementById('s-amp').textContent = (Math.abs(msg.peak || z)).toFixed(3) + ' m/s²';
+  // EMA-smoothed peak til magnitude (hurtigt op, langsomt ned)
+  const peak = Math.abs(msg.peak || z);
+  silentPeakSmoothed = peak > silentPeakSmoothed
+    ? silentPeakSmoothed + (peak - silentPeakSmoothed) * 0.5
+    : silentPeakSmoothed + (peak - silentPeakSmoothed) * 0.05;
+}
+
+// ── Klasse-magnitude: M = log₁₀(peak / noiseFloor) ──
+function silentMagnitudeLabel(M) {
+  if (!isFinite(M) || M < 0.2) return 'stille';
+  if (M < 0.8) return 'baggrundsstøj';
+  if (M < 1.4) return 'hvisken / træk';
+  if (M < 2.0) return 'snak / fodtramp';
+  if (M < 2.6) return 'klap';
+  if (M < 3.2) return 'kraftigt klap';
+  if (M < 3.8) return 'bank på bord';
+  return 'hård bank';
+}
+
+function silentUpdateMag() {
+  const num = document.getElementById('s-mag-num');
+  const lbl = document.getElementById('s-mag-label');
+  if (silentNoiseFloor <= 0 || silentPeakSmoothed <= 0) {
+    num.textContent = '—'; lbl.textContent = 'venter…';
+    return;
+  }
+  const M = Math.log10(silentPeakSmoothed / silentNoiseFloor);
+  num.textContent = M.toFixed(1);
+  lbl.textContent = silentMagnitudeLabel(M);
+}
+
+// Send aktuelle indstillinger til stationen via dashboard-WS
+function silentSendSettings() {
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify({
+    type: 'station:settings',
+    alpha: silentAlpha,
+    sendInterval: silentSendInterval
+  }));
 }
 
 function silentClampView() {
@@ -1140,6 +1315,7 @@ function silentDrawLoop() {
   silentDrawMain();
   silentDrawTimeline();
   silentUpdateZoomLabel();
+  silentUpdateMag();
   requestAnimationFrame(silentDrawLoop);
 }
 
@@ -1200,6 +1376,25 @@ function silentDrawMain() {
   }
 
   const mid = h / 2;
+
+  // Støj-zone: grå skygge ±noiseFloor — tydeliggør hvad der er "rigtigt signal"
+  if (silentShowNoiseZone && silentNoiseFloor > 0) {
+    const zoneHalfHeight = (silentNoiseFloor / silentAmpScale) * (h * 0.42);
+    if (zoneHalfHeight > 0.5 && zoneHalfHeight < h * 0.45) {
+      ctx.fillStyle = 'rgba(245,240,232,.04)';
+      ctx.fillRect(0, mid - zoneHalfHeight, w, zoneHalfHeight * 2);
+      ctx.strokeStyle = 'rgba(245,240,232,.08)';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(0, mid - zoneHalfHeight); ctx.lineTo(w, mid - zoneHalfHeight); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, mid + zoneHalfHeight); ctx.lineTo(w, mid + zoneHalfHeight); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(245,240,232,.25)';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('støj ±' + silentNoiseFloor.toFixed(3), 4, mid + zoneHalfHeight + 11);
+    }
+  }
 
   // Grid (horisontale linjer)
   ctx.strokeStyle = 'rgba(255,255,255,.04)';
