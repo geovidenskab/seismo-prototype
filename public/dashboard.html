@@ -233,14 +233,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .silent-mag-sub { font-size: .55rem; opacity: .4; text-transform: uppercase;
   letter-spacing: .08em; margin-left: -.15rem; }
 
-
+.silent-zoom-group, .silent-marker-group, .silent-dl-group {
+  display: inline-flex; align-items: center; gap: .35rem;
   padding: 0 .3rem; border-left: 1px solid rgba(255,255,255,.08);
-  border-right: 1px solid rgba(255,255,255,.08); margin: 0 .2rem; }
+  border-right: 1px solid rgba(255,255,255,.08); margin: 0 .2rem;
+}
 .silent-zoom-btn { padding: .4rem .7rem !important; font-size: .85rem !important;
   min-width: 36px; }
 .silent-zoom-mode { font-size: .65rem; opacity: .45; min-width: 32px; text-align: center;
   text-transform: uppercase; letter-spacing: .06em; }
 .silent-zoom-mode.manual { color: var(--orange); opacity: .9; }
+.silent-marker-icon { font-size: 1rem; color: var(--orange); line-height: 1; }
+.silent-marker-count { font-size: .75rem; color: var(--orange); font-weight: 600;
+  min-width: 1.2rem; text-align: center; font-variant-numeric: tabular-nums; }
 
 .silent-timeline-wrap { padding: .5rem 1.2rem .8rem; flex-shrink: 0;
   border-top: .5px solid rgba(255,255,255,.06); }
@@ -423,6 +428,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-in" title="Zoom ind (mere følsom)">+</button>
       <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-auto" title="Tilbage til auto-skala">⟲</button>
     </span>
+    <span class="silent-marker-group" id="s-marker-group" title="Klik på grafen for at sætte/fjerne en markør">
+      <span class="silent-marker-icon">⚑</span>
+      <span class="silent-marker-count" id="s-marker-count">0</span>
+      <button class="btn btn-outline silent-zoom-btn" id="s-btn-clear-markers" title="Slet alle markører">×</button>
+    </span>
+    <span class="silent-dl-group">
+      <button class="btn btn-cyan silent-zoom-btn" id="s-btn-png" title="Download PNG-snapshot">⬇ PNG</button>
+      <button class="btn btn-outline silent-zoom-btn" id="s-btn-csv" title="Download data + markører som CSV">⬇ CSV</button>
+    </span>
     <button class="btn btn-outline" id="s-btn-exit">← Forlad øvelse</button>
   </div>
 
@@ -512,6 +526,13 @@ let silentShowMag = true;
 
 // Klasse-magnitude (EMA-smoothed peak / noiseFloor)
 let silentPeakSmoothed = 0;
+
+// Markører — læreren klikker på seismogrammet for at markere et øjeblik
+const silentMarkers = []; // [{ t: ms, label: string }]
+let silentMarkerCounter = 0;
+let silentPointerDownX = 0;
+let silentPointerDownY = 0;
+let silentPointerMoved = false;
 
 // ── Review state ──
 let rvViewStart = 0;   // ms relative to recStartTime
@@ -1143,10 +1164,17 @@ function initSilentMode() {
     silentManualScale = null;
   });
 
+  // Markører + download
+  document.getElementById('s-btn-clear-markers').addEventListener('click', silentClearMarkers);
+  document.getElementById('s-btn-png').addEventListener('click', silentDownloadPNG);
+  document.getElementById('s-btn-csv').addEventListener('click', silentDownloadCSV);
+
   document.getElementById('s-btn-exit').addEventListener('click', () => {
     if (!confirm('Forlad øvelsen og luk session?')) return;
     if (ws) { try { ws.onclose = null; ws.close(); } catch(e) {} }
     silentBuffer.length = 0;
+    silentMarkers.length = 0;
+    silentMarkerCounter = 0;
     silentViewEndMs = 0;
     silentFollowLive = true;
     silentRecording = true;
@@ -1165,13 +1193,19 @@ function initSilentMode() {
   }, { passive: false });
 
   silentCanvas.addEventListener('pointerdown', (e) => {
-    if (silentFollowLive || silentBuffer.length < 2) return;
-    silentDragging = true;
-    silentDragStartX = e.clientX;
-    silentDragStartViewEnd = silentViewEndMs;
-    silentCanvas.setPointerCapture(e.pointerId);
+    silentPointerDownX = e.clientX;
+    silentPointerDownY = e.clientY;
+    silentPointerMoved = false;
+    if (!silentFollowLive && silentBuffer.length >= 2) {
+      silentDragging = true;
+      silentDragStartX = e.clientX;
+      silentDragStartViewEnd = silentViewEndMs;
+      silentCanvas.setPointerCapture(e.pointerId);
+    }
   });
   silentCanvas.addEventListener('pointermove', (e) => {
+    if (Math.abs(e.clientX - silentPointerDownX) > 5 ||
+        Math.abs(e.clientY - silentPointerDownY) > 5) silentPointerMoved = true;
     if (!silentDragging) return;
     const rect = silentCanvas.getBoundingClientRect();
     const dxFrac = (e.clientX - silentDragStartX) / rect.width;
@@ -1179,7 +1213,21 @@ function initSilentMode() {
     silentViewEndMs = silentDragStartViewEnd + deltaMs;
     silentClampView();
   });
-  silentCanvas.addEventListener('pointerup', () => silentDragging = false);
+  silentCanvas.addEventListener('pointerup', (e) => {
+    const wasDragged = silentPointerMoved;
+    silentDragging = false;
+    if (!wasDragged) {
+      // Klik (ingen drag) → tilføj eller fjern markør
+      const rect = silentCanvas.getBoundingClientRect();
+      const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      if (silentBuffer.length < 2) return;
+      const lastT = silentBuffer[silentBuffer.length - 1].t;
+      const viewEnd = silentFollowLive ? lastT : silentViewEndMs;
+      const viewStart = viewEnd - silentViewMs;
+      const markerT = viewStart + frac * silentViewMs;
+      silentToggleMarker(markerT);
+    }
+  });
   silentCanvas.addEventListener('pointercancel', () => silentDragging = false);
 
   // Tidslinje-klik = hop view-vindue derhen
@@ -1261,6 +1309,122 @@ function silentUpdateMag() {
   lbl.textContent = silentMagnitudeLabel(M);
 }
 
+// ── Markører ──
+function silentToggleMarker(t) {
+  if (silentBuffer.length < 2) return;
+  // Tæt på en eksisterende markør? Fjern den.
+  const tolerance = silentViewMs * 0.015; // 1.5% af det aktuelle view
+  const idx = silentMarkers.findIndex(m => Math.abs(m.t - t) < tolerance);
+  if (idx >= 0) {
+    silentMarkers.splice(idx, 1);
+  } else {
+    silentMarkerCounter++;
+    silentMarkers.push({ t, label: '#' + silentMarkerCounter });
+  }
+}
+
+function silentClearMarkers() {
+  if (!silentMarkers.length) return;
+  if (!confirm('Slet alle ' + silentMarkers.length + ' markøre' + (silentMarkers.length === 1 ? 'n' : 'r') + '?')) return;
+  silentMarkers.length = 0;
+  silentMarkerCounter = 0;
+}
+
+// ── Eksport ──
+function silentExportTimestamp() {
+  return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+}
+
+function silentDownloadPNG() {
+  if (silentBuffer.length < 2) { alert('Ingen data at gemme endnu.'); return; }
+  const w = 1600, h = 900;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  // Baggrund
+  ctx.fillStyle = '#0a0f3c';
+  ctx.fillRect(0, 0, w, h);
+
+  // Header tekst
+  ctx.fillStyle = '#f5f0e8';
+  ctx.font = 'bold 26px Georgia, serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('Hvor stille kan du være?', 40, 50);
+  ctx.font = '14px sans-serif';
+  ctx.fillStyle = 'rgba(245,240,232,.55)';
+  ctx.fillText('sans·science · Kom til kernen · ' + new Date().toLocaleString('da-DK'), 40, 76);
+
+  // Magnitude
+  if (silentNoiseFloor > 0 && silentPeakSmoothed > 0) {
+    const M = Math.log10(silentPeakSmoothed / silentNoiseFloor);
+    ctx.font = 'bold 38px Georgia, serif';
+    ctx.fillStyle = '#00b4d8';
+    ctx.textAlign = 'right';
+    ctx.fillText('M ' + M.toFixed(1), w - 40, 52);
+    ctx.font = '14px sans-serif';
+    ctx.fillStyle = 'rgba(245,240,232,.55)';
+    ctx.fillText(silentMagnitudeLabel(M), w - 40, 76);
+  }
+
+  // Drep silent-canvas indhold som hovedplot
+  const plotY = 110, plotH = h - 220;
+  ctx.drawImage(silentCanvas, 40, plotY, w - 80, plotH);
+
+  // Bundtekst med skala
+  ctx.font = '13px sans-serif';
+  ctx.fillStyle = 'rgba(245,240,232,.55)';
+  ctx.textAlign = 'left';
+  ctx.fillText('Skala: ±' + silentAmpScale.toFixed(3) + ' m/s² · Støj: ±' + silentNoiseFloor.toFixed(3) +
+               ' m/s² · Vindue: ' + silentFormatTime(silentViewMs / 1000) +
+               ' · ' + silentMarkers.length + ' markør' + (silentMarkers.length === 1 ? '' : 'er'),
+               40, h - 50);
+  ctx.textAlign = 'right';
+  ctx.fillText('Station: ' + (silentStationName || '—') + ' · ' + silentSampleRate + ' Hz',
+               w - 40, h - 50);
+
+  const link = document.createElement('a');
+  link.download = 'seismograf-' + silentExportTimestamp() + '.png';
+  link.href = c.toDataURL('image/png');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+function silentDownloadCSV() {
+  if (silentBuffer.length < 2) { alert('Ingen data at gemme endnu.'); return; }
+  const lines = [];
+  lines.push('# Seismograf — Hvor stille kan du være?');
+  lines.push('# Eksporteret: ' + new Date().toISOString());
+  lines.push('# Station: ' + (silentStationName || 'ukendt'));
+  lines.push('# Samplingrate: ' + silentSampleRate + ' Hz');
+  lines.push('# Støjniveau (filtreret): ' + silentNoiseFloor.toFixed(4) + ' m/s²');
+  lines.push('# Filter alpha: ' + silentAlpha);
+  lines.push('# Send-interval: ' + silentSendInterval + ' ms');
+  lines.push('');
+  lines.push('timestamp_ms,iso_time,z_filtreret_m_per_s2');
+  for (const s of silentBuffer) {
+    lines.push(s.t + ',' + new Date(s.t).toISOString() + ',' + s.z);
+  }
+  if (silentMarkers.length) {
+    lines.push('');
+    lines.push('# Markører');
+    lines.push('marker_timestamp_ms,iso_time,label');
+    for (const m of silentMarkers) {
+      lines.push(m.t + ',' + new Date(m.t).toISOString() + ',' + m.label);
+    }
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = 'seismograf-' + silentExportTimestamp() + '.csv';
+  link.href = url;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 // Send aktuelle indstillinger til stationen via dashboard-WS
 function silentSendSettings() {
   if (!ws || ws.readyState !== 1) return;
@@ -1316,6 +1480,7 @@ function silentDrawLoop() {
   silentDrawTimeline();
   silentUpdateZoomLabel();
   silentUpdateMag();
+  document.getElementById('s-marker-count').textContent = silentMarkers.length;
   requestAnimationFrame(silentDrawLoop);
 }
 
@@ -1468,6 +1633,29 @@ function silentDrawMain() {
   }
   ctx.closePath(); ctx.fill();
 
+  // Markører — lodrette streger med label, tegnes ovenpå trace
+  for (const m of silentMarkers) {
+    if (m.t < viewStart - 100 || m.t > viewEnd + 100) continue;
+    const x = ((m.t - viewStart) / silentViewMs) * w;
+    if (x < 0 || x > w) continue;
+
+    // Linje
+    ctx.strokeStyle = 'rgba(239,138,23,.85)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.moveTo(x, 22); ctx.lineTo(x, h - 22); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label-baggrund
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText(m.label).width;
+    ctx.fillStyle = 'rgba(239,138,23,.92)';
+    ctx.fillRect(x - tw / 2 - 5, 6, tw + 10, 18);
+    ctx.fillStyle = '#0a0f3c';
+    ctx.fillText(m.label, x, 19);
+  }
+
   // Labels
   document.getElementById('s-amp-label').textContent = '±' + silentAmpScale.toFixed(3) + ' m/s²';
   document.getElementById('s-time-label').textContent = silentFormatTime(silentViewMs / 1000) + ' vindue';
@@ -1519,6 +1707,14 @@ function silentDrawTimeline() {
   ctx.strokeStyle = silentFollowLive ? 'rgba(0,180,216,.6)' : 'rgba(239,138,23,.7)';
   ctx.lineWidth = 1;
   ctx.strokeRect(xStart, 0, Math.max(2, xEnd - xStart), h);
+
+  // Markører som lodrette streger i timeline-thumbnail
+  for (const m of silentMarkers) {
+    if (m.t < firstT || m.t > lastT) continue;
+    const mx = ((m.t - firstT) / totalMs) * w;
+    ctx.fillStyle = 'rgba(239,138,23,.95)';
+    ctx.fillRect(mx - 1, 0, 2, h);
+  }
 }
 
 function silentNiceInterval(rangeMs, targetTicks) {
