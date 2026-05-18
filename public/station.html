@@ -588,10 +588,11 @@ function startCalibration() {
     doSyncPing();
   }
 
-  // Progress + støjmåling
+  // Progress + støjmåling. Langsom så vi får ~7 sek samples — bruger
+  // har tid til at lægge telefonen, og vi får flere glidende vinduer at vælge mellem.
   let progress = 0;
   const progressIv = setInterval(() => {
-    progress += 3 + Math.random() * 4;
+    progress += 2 + Math.random() * 2;
     if (progress > 100) progress = 100;
     pctEl.textContent = Math.round(progress) + '%';
 
@@ -600,18 +601,25 @@ function startCalibration() {
       clearInterval(progressIv);
       window.removeEventListener('devicemotion', onMotion);
 
-      // Beregn støjniveau på det FILTRREDE signal (det brugeren faktisk ser)
-      // Drop første 1/4 af samples — filteret er stadig ved at konvergere
-      if (calibSamples.length > 20) {
-        const skip = Math.floor(calibSamples.length / 4);
-        const fVals = calibSamples.slice(skip).map(s => s.filtered);
-        const fMean = fVals.reduce((a, b) => a + b, 0) / fVals.length;
-        const fVar = fVals.reduce((a, z) => a + (z - fMean) ** 2, 0) / fVals.length;
-        noiseFloor = Math.sqrt(fVar);
-
-        // Estimér samplingrate
+      // Beregn støjniveau med glidende 1-sek-vinduer, vælg det laveste.
+      // Robust mod at brugeren stadig flytter telefonen i starten af kalibrering.
+      if (calibSamples.length > 30) {
+        // Estimér samplingrate først
         const dt = (calibSamples[calibSamples.length - 1].t - calibSamples[0].t) / 1000;
         sampleRate = Math.round(calibSamples.length / dt);
+        const winSize = Math.max(10, Math.floor(sampleRate)); // ~1 sek samples
+        const stride = Math.max(1, Math.floor(winSize / 2));
+
+        let minStd = Infinity;
+        for (let start = winSize; start + winSize <= calibSamples.length; start += stride) {
+          const win = calibSamples.slice(start, start + winSize);
+          const fVals = win.map(s => s.filtered);
+          const m = fVals.reduce((a, b) => a + b, 0) / fVals.length;
+          const v = fVals.reduce((a, z) => a + (z - m) ** 2, 0) / fVals.length;
+          const std = Math.sqrt(v);
+          if (std < minStd) minStd = std;
+        }
+        noiseFloor = isFinite(minStd) && minStd > 0 ? minStd : 0.02;
       } else {
         noiseFloor = 0.05;
         sampleRate = 60;

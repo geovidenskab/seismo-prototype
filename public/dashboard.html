@@ -1369,10 +1369,15 @@ function silentDrawMain() {
       const a = Math.abs(s.z);
       if (a > maxAbs) maxAbs = a;
     }
-    // Minimum skala = 4× støjniveau så støj-zonen aldrig fylder mere end ~20% af synshøjden
-    // og der altid er plads til at se signal stikke ud
-    const minScale = silentNoiseFloor > 0 ? silentNoiseFloor * 4 : 0.02;
-    const targetScale = Math.max(maxAbs * 1.25, minScale);
+    // To moduser:
+    //   "rolig"  (maxAbs <= 1.5 × støj): skalér til 3× støj — zone fylder ~33% af h, ingen pixel-jitter
+    //   "signal" (maxAbs >  1.5 × støj): skalér til maxAbs × 1.25 — signal fylder ~80% af h
+    let targetScale;
+    if (silentNoiseFloor > 0 && maxAbs <= silentNoiseFloor * 1.5) {
+      targetScale = silentNoiseFloor * 3;
+    } else {
+      targetScale = Math.max(maxAbs * 1.25, 0.02);
+    }
     // Asymmetrisk EMA: hurtigt op (fang transient), langsomt ned (rolig genopretning)
     const ema = targetScale > silentAmpScale ? SILENT_EMA_FAST : SILENT_EMA_SLOW;
     silentAmpScale = silentAmpScale + (targetScale - silentAmpScale) * ema;
