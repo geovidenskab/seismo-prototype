@@ -152,7 +152,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   transition: border-color .2s, background .2s, transform .1s; color: inherit; font: inherit; }
 .mode-card:hover { border-color: rgba(0,180,216,.45); background: rgba(0,180,216,.05); }
 .mode-card:active { transform: scale(.98); }
-.mode-icon { font-size: 1.8rem; margin-bottom: .5rem; }
+.mode-icon { display: block; width: 64px; height: 32px; margin-bottom: .8rem; opacity: .85; }
 .mode-title { font-size: 1.05rem; font-weight: 600; color: var(--warm); margin-bottom: .35rem;
   font-family: Georgia, serif; }
 .mode-desc { font-size: .8rem; opacity: .6; line-height: 1.55; margin-bottom: 1rem; }
@@ -220,9 +220,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   border-top: .5px solid rgba(255,255,255,.06); align-items: center; justify-content: center;
   flex-shrink: 0; flex-wrap: wrap; }
 .silent-controls .btn { padding: .55rem 1.4rem; font-size: .85rem; }
-.silent-controls .live-indicator { font-size: .68rem; padding: .35rem .8rem; border-radius: 10px;
-  background: rgba(42,157,143,.15); color: var(--green); font-weight: 500;
-  display: inline-flex; align-items: center; gap: .4rem; }
+.silent-controls .live-indicator { font-size: .65rem; padding: .35rem .8rem; border-radius: 10px;
+  background: rgba(42,157,143,.15); color: var(--green); font-weight: 600;
+  display: inline-flex; align-items: center; gap: .45rem;
+  text-transform: uppercase; letter-spacing: .08em; }
 .silent-controls .live-indicator::before { content: ''; width: 7px; height: 7px;
   border-radius: 50%; background: var(--green); animation: pulseDot 1.5s ease-in-out infinite; }
 .silent-controls .live-indicator.paused { background: rgba(239,138,23,.12); color: var(--orange); }
@@ -267,14 +268,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   padding: 0 .3rem; border-left: 1px solid rgba(255,255,255,.08);
   border-right: 1px solid rgba(255,255,255,.08); margin: 0 .2rem;
 }
-.silent-zoom-btn { padding: .4rem .7rem !important; font-size: .85rem !important;
-  min-width: 36px; }
+.silent-zoom-btn { padding: .4rem .7rem !important; font-size: .8rem !important;
+  min-width: 36px; letter-spacing: .04em; }
 .silent-zoom-mode { font-size: .65rem; opacity: .45; min-width: 32px; text-align: center;
   text-transform: uppercase; letter-spacing: .06em; }
 .silent-zoom-mode.manual { color: var(--orange); opacity: .9; }
-.silent-marker-icon { font-size: 1rem; color: var(--orange); line-height: 1; }
-.silent-marker-count { font-size: .75rem; color: var(--orange); font-weight: 600;
-  min-width: 1.2rem; text-align: center; font-variant-numeric: tabular-nums; }
+.silent-marker-label { font-size: .6rem; opacity: .45; text-transform: uppercase;
+  letter-spacing: .08em; }
+.silent-marker-count { font-size: .9rem; color: var(--orange); font-weight: 600;
+  min-width: 1.2rem; text-align: center; font-variant-numeric: tabular-nums;
+  font-family: 'SF Mono', 'Fira Code', monospace; }
+.silent-zoom-auto-btn { font-size: .7rem !important; text-transform: uppercase;
+  letter-spacing: .05em; min-width: 48px !important; }
 
 .silent-timeline-wrap { padding: .5rem 1.2rem .8rem; flex-shrink: 0;
   border-top: .5px solid rgba(255,255,255,.06); }
@@ -295,14 +300,28 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 
   <div class="mode-cards">
     <button class="mode-card" data-mode="silent">
-      <div class="mode-icon">🔇</div>
+      <svg class="mode-icon" viewBox="0 0 64 32" aria-hidden="true">
+        <line x1="2" y1="16" x2="62" y2="16" stroke="rgba(245,240,232,.12)" stroke-width="1"/>
+        <path d="M 2 16 L 10 16 L 13 15 L 16 16 L 19 17 L 22 12 L 25 22 L 27 8 L 29 24 L 32 14 L 35 17 L 38 16 L 42 16 L 46 15 L 50 16 L 62 16"
+              fill="none" stroke="#00b4d8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
       <div class="mode-title">Hvor stille kan du være?</div>
       <div class="mode-desc">Én elevtelefon lytter til klassen og viser signalet live på tavlen. Ingen optagelses-knap — bare lyt, observér, og spol tilbage hvis I så noget spændende.</div>
       <div class="mode-meta">1 telefon · live · scrollback</div>
     </button>
 
     <button class="mode-card" data-mode="wavespeed">
-      <div class="mode-icon">📐</div>
+      <svg class="mode-icon" viewBox="0 0 64 32" aria-hidden="true">
+        <line x1="4" y1="22" x2="60" y2="22" stroke="#00b4d8" stroke-width="1.4"/>
+        <line x1="4"  y1="22" x2="4"  y2="14" stroke="#00b4d8" stroke-width="1.4"/>
+        <line x1="20" y1="22" x2="20" y2="17" stroke="#00b4d8" stroke-width="1.4"/>
+        <line x1="36" y1="22" x2="36" y2="17" stroke="#00b4d8" stroke-width="1.4"/>
+        <line x1="52" y1="22" x2="52" y2="17" stroke="#00b4d8" stroke-width="1.4"/>
+        <line x1="60" y1="22" x2="60" y2="14" stroke="#00b4d8" stroke-width="1.4"/>
+        <path d="M 4 8 Q 32 0, 60 8" fill="none" stroke="#ef8a17" stroke-width="1.4" stroke-linecap="round"/>
+        <circle cx="4" cy="8" r="2" fill="#ef8a17"/>
+        <circle cx="60" cy="8" r="2" fill="#ef8a17"/>
+      </svg>
       <div class="mode-title">Mål bølgehastigheden</div>
       <div class="mode-desc">Flere telefoner i kendt afstand. Bank på bordet — eleverne måler hvor hurtigt rystelsen rejser. Klassisk fysik-eksperiment med trigger og optagelse.</div>
       <div class="mode-meta">2+ telefoner · countdown · optagelse</div>
@@ -381,8 +400,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
         <span class="silent-mag-num" id="s-mag-num">—</span>
         <span class="silent-mag-label" id="s-mag-label">stille</span>
       </div>
-      <button class="silent-qr-btn" id="s-settings-btn" title="Indstillinger">⚙</button>
-      <button class="silent-qr-btn" id="s-qr-btn">Vis QR</button>
+      <button class="silent-qr-btn" id="s-settings-btn" title="Indstillinger">⋯</button>
+      <button class="silent-qr-btn" id="s-qr-btn">QR</button>
     </div>
   </div>
 
@@ -447,26 +466,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   </div>
 
   <div class="silent-controls">
-    <button class="btn btn-green" id="s-btn-start">⏵ Start</button>
-    <button class="btn btn-red" id="s-btn-pause" style="display:none">⏸ Pause</button>
-    <button class="btn btn-cyan" id="s-btn-live" style="display:none">⏎ Tilbage til live</button>
-    <span class="live-indicator" id="s-indicator">Live</span>
+    <button class="btn btn-green" id="s-btn-start">START</button>
+    <button class="btn btn-red" id="s-btn-pause" style="display:none">PAUSE</button>
+    <button class="btn btn-cyan" id="s-btn-live" style="display:none">LIVE</button>
+    <span class="live-indicator" id="s-indicator">live</span>
     <span class="silent-zoom-group">
       <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-out" title="Zoom ud (mindre følsom)">−</button>
       <span class="silent-zoom-mode" id="s-zoom-mode">auto</span>
       <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-in" title="Zoom ind (mere følsom)">+</button>
-      <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-auto" title="Tilbage til auto-skala">⟲</button>
+      <button class="btn btn-outline silent-zoom-btn silent-zoom-auto-btn" id="s-btn-zoom-auto" title="Tilbage til auto-skala">auto</button>
     </span>
     <span class="silent-marker-group" id="s-marker-group" title="Klik på grafen for at sætte/fjerne en markør">
-      <span class="silent-marker-icon">⚑</span>
+      <span class="silent-marker-label">markører</span>
       <span class="silent-marker-count" id="s-marker-count">0</span>
       <button class="btn btn-outline silent-zoom-btn" id="s-btn-clear-markers" title="Slet alle markører">×</button>
     </span>
     <span class="silent-dl-group">
-      <button class="btn btn-cyan silent-zoom-btn" id="s-btn-png" title="Download PNG-snapshot">⬇ PNG</button>
-      <button class="btn btn-outline silent-zoom-btn" id="s-btn-csv" title="Download data + markører som CSV">⬇ CSV</button>
+      <button class="btn btn-cyan silent-zoom-btn" id="s-btn-png" title="Download PNG-snapshot">PNG</button>
+      <button class="btn btn-outline silent-zoom-btn" id="s-btn-csv" title="Download data + markører som CSV">CSV</button>
     </span>
-    <button class="btn btn-outline" id="s-btn-exit">← Forlad øvelse</button>
+    <button class="btn btn-outline" id="s-btn-exit">forlad</button>
   </div>
 
   <div class="silent-timeline-wrap">
@@ -493,8 +512,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       <div><span class="ws-result-value" id="ws-v">—</span><span class="ws-result-unit">m/s</span></div>
       <div class="ws-result-meta" id="ws-meta">—</div>
       <div class="ws-result-export">
-        <button class="btn btn-cyan" id="ws-btn-png">⬇ PNG</button>
-        <button class="btn btn-outline" id="ws-btn-csv">⬇ CSV</button>
+        <button class="btn btn-cyan" id="ws-btn-png">PNG</button>
+        <button class="btn btn-outline" id="ws-btn-csv">CSV</button>
       </div>
     </div>
     <div class="ws-result-plot">
@@ -1267,7 +1286,7 @@ function wsUpdateResult() {
   const warn = document.getElementById('ws-warn');
   if (isFinite(result.vSyncUncertainty) && result.vSyncUncertainty > result.v * 0.3) {
     warn.style.display = '';
-    warn.innerHTML = '⚠ Tidssync-præcision (~10 ms) giver ekstra usikkerhed på ±' +
+    warn.innerHTML = '<strong>OBS</strong> · Tidssync-præcision (~10 ms) giver ekstra usikkerhed på ±' +
       wsFormatVelocity(result.vSyncUncertainty) + '. For mere pålidelig måling: brug større afstande eller langsommere medium.';
   } else {
     warn.style.display = 'none';
@@ -1558,7 +1577,7 @@ function initSilentMode() {
   });
   // Manuel zoom: + zoomer ind (mere følsom — mindre skala-værdi),
   //              − zoomer ud (mindre følsom — større skala-værdi),
-  //              ⟲ tilbage til auto
+  //              auto-knappen vender tilbage til auto-skala
   document.getElementById('s-btn-zoom-in').addEventListener('click', () => {
     if (silentManualScale == null) silentManualScale = silentAmpScale;
     silentManualScale = Math.max(0.005, silentManualScale * 0.7);
@@ -1859,10 +1878,10 @@ function silentUpdateButtons() {
   silentCanvas.classList.toggle('live', silentFollowLive);
   const ind = document.getElementById('s-indicator');
   if (silentFollowLive && silentRecording) {
-    ind.textContent = 'Live';
+    ind.textContent = 'live';
     ind.className = 'live-indicator';
   } else {
-    ind.textContent = 'Pause · scrollback';
+    ind.textContent = 'pause · scrollback';
     ind.className = 'live-indicator paused';
   }
 }
