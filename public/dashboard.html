@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dashboard — Seismisk netværk</title>
+
+<!-- PWA -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a0f3c">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon.svg">
 <style>
 :root { --navy: #0a0f3c; --warm: #f5f0e8; --sand: #e8dfd0; --cyan: #00b4d8;
   --red: #e63946; --green: #2a9d8f; --orange: #ef8a17; }
@@ -102,17 +108,132 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   .dash-body { grid-template-columns: 1fr; }
   .stats-row { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ══════════════════════════════════════════════════════════ */
+/* Mode-valgskærm (Create screen — nye to-kort layout)        */
+/* ══════════════════════════════════════════════════════════ */
+.create-hero { font-family: Georgia, 'Times New Roman', serif; font-size: 1.6rem;
+  font-weight: 500; margin: .4rem 0 .3rem; letter-spacing: -.01em; }
+.create-hero em { color: var(--cyan); font-style: italic; }
+.create-tag { font-size: .8rem; opacity: .45; margin-bottom: 2.2rem; max-width: 460px; text-align: center; line-height: 1.5; }
+.mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;
+  max-width: 760px; width: 100%; padding: 1rem; }
+.mode-card { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08);
+  border-radius: 14px; padding: 1.6rem 1.4rem; text-align: left; cursor: pointer;
+  transition: border-color .2s, background .2s, transform .1s; color: inherit; font: inherit; }
+.mode-card:hover { border-color: rgba(0,180,216,.45); background: rgba(0,180,216,.05); }
+.mode-card:active { transform: scale(.98); }
+.mode-icon { font-size: 1.8rem; margin-bottom: .5rem; }
+.mode-title { font-size: 1.05rem; font-weight: 600; color: var(--warm); margin-bottom: .35rem;
+  font-family: Georgia, serif; }
+.mode-desc { font-size: .8rem; opacity: .6; line-height: 1.55; margin-bottom: 1rem; }
+.mode-meta { font-size: .62rem; opacity: .35; text-transform: uppercase; letter-spacing: .1em; }
+.create-footer { font-size: .7rem; opacity: .3; margin-top: 1.8rem; text-align: center; max-width: 500px; line-height: 1.5; }
+
+@media (max-width: 720px) {
+  .mode-cards { grid-template-columns: 1fr; padding: .8rem; }
+}
+
+/* ══════════════════════════════════════════════════════════ */
+/* Silent-screen (Mode A — Hvor stille kan du være?)          */
+/* ══════════════════════════════════════════════════════════ */
+.silent-screen { flex-direction: column; min-height: 100vh; height: 100vh; }
+.silent-header { display: flex; align-items: center; justify-content: space-between;
+  padding: .55rem 1.2rem; border-bottom: .5px solid rgba(255,255,255,.06); flex-shrink: 0; gap: 1rem; }
+.silent-title-block { display: flex; flex-direction: column; gap: 1px; }
+.silent-title-sub { font-size: .6rem; opacity: .35; letter-spacing: .05em; text-transform: uppercase; }
+.silent-title { font-size: 1.05rem; font-weight: 500; font-family: Georgia, serif; color: var(--warm); }
+.silent-title em { color: var(--cyan); font-style: italic; }
+.silent-info { display: flex; align-items: center; gap: 1.2rem; font-size: .75rem; opacity: .7; }
+.silent-info .silent-code { font-family: 'SF Mono', monospace; color: var(--cyan);
+  font-size: 1.05rem; font-weight: 600; letter-spacing: .1em; }
+.silent-info .silent-stat { font-variant-numeric: tabular-nums; opacity: .55; }
+.silent-info .silent-station-state { font-size: .65rem; padding: 3px 9px; border-radius: 10px;
+  background: rgba(0,180,216,.12); color: var(--cyan); font-weight: 500; }
+.silent-info .silent-station-state.ready { background: rgba(42,157,143,.15); color: var(--green); }
+.silent-info .silent-station-state.gone { background: rgba(230,57,70,.12); color: var(--red); }
+.silent-qr-btn { background: rgba(0,180,216,.1); color: var(--cyan);
+  border: 1px solid rgba(0,180,216,.25); padding: .35rem .8rem; border-radius: 8px;
+  font-size: .7rem; cursor: pointer; font-weight: 500; }
+.silent-qr-popup { position: fixed; top: 64px; right: 14px; background: var(--navy);
+  border: 1px solid rgba(255,255,255,.14); border-radius: 14px; padding: 1rem;
+  z-index: 100; box-shadow: 0 12px 40px rgba(0,0,0,.6); display: none; }
+.silent-qr-popup.show { display: block; }
+.silent-qr-popup .qr-wrap { width: 200px; height: 200px; background: white;
+  border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  margin-bottom: .6rem; }
+.silent-qr-popup .qr-wrap svg { width: 190px; height: 190px; }
+.silent-qr-popup .join-url { font-size: .7rem; opacity: .55; word-break: break-all;
+  text-align: center; max-width: 200px; }
+
+.silent-main { flex: 1; position: relative; min-height: 0; background: var(--navy);
+  overflow: hidden; }
+.silent-canvas { width: 100%; height: 100%; display: block; cursor: grab;
+  touch-action: none; }
+.silent-canvas.live { cursor: default; }
+.silent-canvas:active { cursor: grabbing; }
+.silent-amp-label { position: absolute; left: 1rem; top: .8rem; font-size: .7rem;
+  opacity: .4; font-variant-numeric: tabular-nums; pointer-events: none; }
+.silent-time-label { position: absolute; right: 1rem; top: .8rem; font-size: .7rem;
+  opacity: .4; font-variant-numeric: tabular-nums; pointer-events: none; }
+
+.silent-waiting { position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center; flex-direction: column; gap: 1.2rem; padding: 1rem; }
+.silent-waiting .qr-wrap { width: 220px; height: 220px; background: white;
+  border-radius: 14px; display: flex; align-items: center; justify-content: center; }
+.silent-waiting .qr-wrap svg { width: 200px; height: 200px; }
+.silent-waiting .label { font-size: .95rem; opacity: .65; text-align: center; max-width: 460px; line-height: 1.5; }
+.silent-waiting .code-big { font-family: 'SF Mono', monospace; font-size: 2.6rem;
+  color: var(--cyan); font-weight: 600; letter-spacing: .2em; }
+.silent-waiting .url { font-size: .7rem; opacity: .35; word-break: break-all; }
+
+.silent-controls { display: flex; gap: .8rem; padding: .8rem 1.2rem;
+  border-top: .5px solid rgba(255,255,255,.06); align-items: center; justify-content: center;
+  flex-shrink: 0; flex-wrap: wrap; }
+.silent-controls .btn { padding: .55rem 1.4rem; font-size: .85rem; }
+.silent-controls .live-indicator { font-size: .68rem; padding: .35rem .8rem; border-radius: 10px;
+  background: rgba(42,157,143,.15); color: var(--green); font-weight: 500;
+  display: inline-flex; align-items: center; gap: .4rem; }
+.silent-controls .live-indicator::before { content: ''; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--green); animation: pulseDot 1.5s ease-in-out infinite; }
+.silent-controls .live-indicator.paused { background: rgba(239,138,23,.12); color: var(--orange); }
+.silent-controls .live-indicator.paused::before { background: var(--orange); animation: none; }
+@keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+.silent-timeline-wrap { padding: .5rem 1.2rem .8rem; flex-shrink: 0;
+  border-top: .5px solid rgba(255,255,255,.06); }
+.silent-timeline { width: 100%; height: 40px; cursor: pointer; display: block;
+  background: rgba(255,255,255,.02); border-radius: 5px; touch-action: none; }
+.silent-timeline-labels { display: flex; justify-content: space-between;
+  font-size: .6rem; opacity: .3; margin-top: 3px; font-variant-numeric: tabular-nums; }
+
 </style>
 </head>
 <body>
 
-<!-- ═══ CREATE ═══ -->
+<!-- ═══ CREATE / MODE-VALG ═══ -->
 <div class="screen create-screen active" id="scr-create">
   <div class="logo">sans<span>·</span>science</div>
-  <div class="sub">Kom til kernen — seismisk netværk</div>
-  <button class="btn btn-cyan" id="btn-create" style="font-size:1rem;padding:.8rem 3rem">
-    Opret nyt seismisk netværk
-  </button>
+  <div class="create-hero">Kom til kernen — <em>seismisk netværk</em></div>
+  <div class="create-tag">Eleverne bliver Inge Lehmanns netværk. Vælg en øvelse for at starte.</div>
+
+  <div class="mode-cards">
+    <button class="mode-card" data-mode="silent">
+      <div class="mode-icon">🔇</div>
+      <div class="mode-title">Hvor stille kan du være?</div>
+      <div class="mode-desc">Én elevtelefon lytter til klassen og viser signalet live på tavlen. Ingen optagelses-knap — bare lyt, observér, og spol tilbage hvis I så noget spændende.</div>
+      <div class="mode-meta">1 telefon · live · scrollback</div>
+    </button>
+
+    <button class="mode-card" data-mode="wavespeed">
+      <div class="mode-icon">📐</div>
+      <div class="mode-title">Mål bølgehastigheden</div>
+      <div class="mode-desc">Flere telefoner i kendt afstand. Bank på bordet — eleverne måler hvor hurtigt rystelsen rejser. Klassisk fysik-eksperiment med trigger og optagelse.</div>
+      <div class="mode-meta">2+ telefoner · countdown · optagelse</div>
+    </button>
+  </div>
+
+  <div class="create-footer">Eleverne tilslutter via QR-kode eller 4-cifret kode. Telefonen skal være på samme wifi som lærercomputeren — eller bruge ngrok / cloudflared.</div>
 </div>
 
 <!-- ═══ DASHBOARD ═══ -->
@@ -169,6 +290,56 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   </div>
 </div>
 
+<!-- ═══ SILENT (Mode A — Hvor stille kan du være?) ═══ -->
+<div class="screen silent-screen" id="scr-silent">
+  <div class="silent-header">
+    <div class="silent-title-block">
+      <div class="silent-title-sub">sans·science · Kom til kernen</div>
+      <div class="silent-title">Hvor stille kan du <em>være?</em></div>
+    </div>
+    <div class="silent-info">
+      <span class="silent-code" id="s-code">—</span>
+      <span class="silent-station-state" id="s-station-state">Venter på station</span>
+      <span class="silent-stat" id="s-amp">— m/s²</span>
+      <button class="silent-qr-btn" id="s-qr-btn">Vis QR</button>
+    </div>
+  </div>
+
+  <div class="silent-qr-popup" id="s-qr-popup">
+    <div class="qr-wrap" id="s-qr-mini"></div>
+    <div class="join-url" id="s-url-mini"></div>
+  </div>
+
+  <div class="silent-main" id="s-main">
+    <canvas class="silent-canvas live" id="s-canvas"></canvas>
+    <div class="silent-amp-label" id="s-amp-label">±0.05 m/s²</div>
+    <div class="silent-time-label" id="s-time-label">30 s vindue</div>
+
+    <!-- Venter-overlay vises indtil station er klar -->
+    <div class="silent-waiting" id="s-waiting">
+      <div class="qr-wrap" id="s-qr-big"></div>
+      <div class="code-big" id="s-code-big">—</div>
+      <div class="label">Scan QR-koden med én elevtelefon, eller indtast koden manuelt på station-siden.</div>
+      <div class="url" id="s-url-big"></div>
+    </div>
+  </div>
+
+  <div class="silent-controls">
+    <button class="btn btn-green" id="s-btn-start">⏵ Start</button>
+    <button class="btn btn-red" id="s-btn-pause" style="display:none">⏸ Pause</button>
+    <button class="btn btn-cyan" id="s-btn-live" style="display:none">⏎ Tilbage til live</button>
+    <span class="live-indicator" id="s-indicator">Live</span>
+    <button class="btn btn-outline" id="s-btn-exit">← Forlad øvelse</button>
+  </div>
+
+  <div class="silent-timeline-wrap">
+    <canvas class="silent-timeline" id="s-timeline"></canvas>
+    <div class="silent-timeline-labels">
+      <span>−10 min</span><span>nu</span>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ REVIEW ═══ -->
 <div class="screen review" id="scr-review">
   <div class="review-header">
@@ -199,6 +370,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 // ═══════════════════════════════════════════════════════════
 let ws = null;
 let sessionCode = '';
+let sessionMode = 'wavespeed';  // 'silent' | 'wavespeed'
 let sessionState = 'lobby';
 const stations = new Map();
 const seismoData = new Map();       // live: stationId → { samples[], canvas, ctx }
@@ -209,6 +381,20 @@ let recStartTime = 0;
 let recAutoStopTimer = null;
 let recTimerIv = null;
 
+// ── Silent-mode state ──
+const SILENT_BUFFER_MAX = 30000;    // ~25 min @ 20 Hz — rigeligt
+const SILENT_DEFAULT_VIEW_MS = 30000; // 30 s vindue
+const SILENT_MAX_VIEW_MS = 600000;    // 10 min max
+const SILENT_MIN_VIEW_MS = 3000;      // 3 s min
+const silentBuffer = [];              // [{t, z}]
+let silentRecording = true;           // styres af Start/Pause
+let silentFollowLive = true;          // true = main-canvas følger seneste
+let silentViewMs = SILENT_DEFAULT_VIEW_MS; // bredde på view-vindue i ms
+let silentViewEndMs = 0;              // tid (ms-since-epoch) for højre kant af view; 0 = nu
+let silentAmpScale = 0.1;             // EMA-smoothed auto-skala
+let silentStationName = null;
+let silentLastQrUrl = '';
+
 // ── Review state ──
 let rvViewStart = 0;   // ms relative to recStartTime
 let rvViewEnd = 10000;
@@ -218,26 +404,54 @@ let rvDragStartView = [0, 0];
 const rvCanvases = new Map(); // stationId → { canvas, ctx }
 
 // ═══════════════════════════════════════════════════════════
-// CREATE SESSION
+// CREATE SESSION — med mode-valg
 // ═══════════════════════════════════════════════════════════
-document.getElementById('btn-create').addEventListener('click', async () => {
-  const res = await fetch('/api/session', { method: 'POST' });
+document.querySelectorAll('.mode-card').forEach(card => {
+  card.addEventListener('click', () => createSession(card.dataset.mode));
+});
+
+async function createSession(mode) {
+  sessionMode = mode === 'silent' ? 'silent' : 'wavespeed';
+
+  const res = await fetch('/api/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode: sessionMode })
+  });
   const data = await res.json();
   sessionCode = data.code;
-  document.getElementById('d-code').textContent = data.code;
 
   // Hent QR med netværks-IP så telefoner på samme wifi kan scanne
   const infoRes = await fetch('/api/info');
   const info = await infoRes.json();
   const qrRes = await fetch(`/api/session/${data.code}/qr?host=${info.host}`);
   const qrData = await qrRes.json();
-  document.getElementById('d-qr').innerHTML = qrData.svg;
-  document.getElementById('d-url').textContent = qrData.url;
+  silentLastQrUrl = qrData.url;
 
-  document.getElementById('scr-create').classList.remove('active');
-  document.getElementById('scr-dash').classList.add('active');
+  if (sessionMode === 'silent') {
+    // Silent-screen
+    document.getElementById('s-code').textContent = data.code;
+    document.getElementById('s-code-big').textContent = data.code;
+    document.getElementById('s-qr-big').innerHTML = qrData.svg;
+    document.getElementById('s-qr-mini').innerHTML = qrData.svg;
+    document.getElementById('s-url-big').textContent = qrData.url;
+    document.getElementById('s-url-mini').textContent = qrData.url;
+
+    document.getElementById('scr-create').classList.remove('active');
+    document.getElementById('scr-silent').classList.add('active');
+    initSilentMode();
+  } else {
+    // Wavespeed-dashboard (uændret)
+    document.getElementById('d-code').textContent = data.code;
+    document.getElementById('d-qr').innerHTML = qrData.svg;
+    document.getElementById('d-url').textContent = qrData.url;
+
+    document.getElementById('scr-create').classList.remove('active');
+    document.getElementById('scr-dash').classList.add('active');
+  }
+
   connectDashboard(data.code);
-});
+}
 
 // ═══════════════════════════════════════════════════════════
 // WEBSOCKET
@@ -250,6 +464,28 @@ function connectDashboard(code) {
 }
 
 function handleMsg(msg) {
+  // Silent-mode har simpel dataflow — kun station-join/data
+  if (sessionMode === 'silent') {
+    switch (msg.type) {
+      case 'init':
+        if (msg.stations && msg.stations.length) silentSetStation(msg.stations[0]);
+        break;
+      case 'station:joined':
+      case 'station:ready':
+        silentSetStation(msg);
+        break;
+      case 'station:left':
+        silentSetStation(null);
+        break;
+      case 'data':
+        silentPushData(msg);
+        break;
+      // recording:start/stop/trigger ignoreres i silent
+    }
+    return;
+  }
+
+  // Wavespeed-mode (uændret)
   switch (msg.type) {
     case 'init':
       msg.stations.forEach(s => addStation(s));
@@ -686,6 +922,345 @@ document.getElementById('rv-new').addEventListener('click', () => {
   document.getElementById('scr-review').classList.remove('active');
   document.getElementById('scr-dash').classList.add('active');
 });
+
+// ═══════════════════════════════════════════════════════════
+// SILENT MODE — "Hvor stille kan du være?"
+// ═══════════════════════════════════════════════════════════
+let silentCanvas, silentCtx, silentTimelineCanvas, silentTimelineCtx;
+let silentDragging = false;
+let silentDragStartX = 0;
+let silentDragStartViewEnd = 0;
+
+function initSilentMode() {
+  silentCanvas = document.getElementById('s-canvas');
+  silentCtx = silentCanvas.getContext('2d');
+  silentTimelineCanvas = document.getElementById('s-timeline');
+  silentTimelineCtx = silentTimelineCanvas.getContext('2d');
+
+  // QR-toggle
+  document.getElementById('s-qr-btn').addEventListener('click', () => {
+    document.getElementById('s-qr-popup').classList.toggle('show');
+  });
+  document.addEventListener('click', (e) => {
+    const popup = document.getElementById('s-qr-popup');
+    const btn = document.getElementById('s-qr-btn');
+    if (popup.classList.contains('show') &&
+        !popup.contains(e.target) && e.target !== btn) {
+      popup.classList.remove('show');
+    }
+  });
+
+  // Start/Pause/Live-knapper
+  document.getElementById('s-btn-start').addEventListener('click', () => {
+    silentRecording = true;
+    silentFollowLive = true;
+    apiControl('silent:start');
+    silentUpdateButtons();
+  });
+  document.getElementById('s-btn-pause').addEventListener('click', () => {
+    silentRecording = false;
+    silentFollowLive = false;
+    if (silentViewEndMs === 0 && silentBuffer.length) {
+      silentViewEndMs = silentBuffer[silentBuffer.length - 1].t;
+    }
+    apiControl('silent:stop');
+    silentUpdateButtons();
+  });
+  document.getElementById('s-btn-live').addEventListener('click', () => {
+    silentFollowLive = true;
+    silentViewEndMs = 0;
+    silentRecording = true;
+    apiControl('silent:start');
+    silentUpdateButtons();
+  });
+  document.getElementById('s-btn-exit').addEventListener('click', () => {
+    if (!confirm('Forlad øvelsen og luk session?')) return;
+    if (ws) { try { ws.onclose = null; ws.close(); } catch(e) {} }
+    silentBuffer.length = 0;
+    silentViewEndMs = 0;
+    silentFollowLive = true;
+    silentRecording = true;
+    silentStationName = null;
+    document.getElementById('scr-silent').classList.remove('active');
+    document.getElementById('scr-create').classList.add('active');
+  });
+
+  // Pan + zoom på hovedcanvas (når ikke i follow-live)
+  silentCanvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    if (silentBuffer.length < 2) return;
+    const factor = e.deltaY > 0 ? 1.3 : 0.77;
+    silentViewMs = Math.max(SILENT_MIN_VIEW_MS,
+                            Math.min(silentViewMs * factor, SILENT_MAX_VIEW_MS));
+  }, { passive: false });
+
+  silentCanvas.addEventListener('pointerdown', (e) => {
+    if (silentFollowLive || silentBuffer.length < 2) return;
+    silentDragging = true;
+    silentDragStartX = e.clientX;
+    silentDragStartViewEnd = silentViewEndMs;
+    silentCanvas.setPointerCapture(e.pointerId);
+  });
+  silentCanvas.addEventListener('pointermove', (e) => {
+    if (!silentDragging) return;
+    const rect = silentCanvas.getBoundingClientRect();
+    const dxFrac = (e.clientX - silentDragStartX) / rect.width;
+    const deltaMs = -dxFrac * silentViewMs;
+    silentViewEndMs = silentDragStartViewEnd + deltaMs;
+    silentClampView();
+  });
+  silentCanvas.addEventListener('pointerup', () => silentDragging = false);
+  silentCanvas.addEventListener('pointercancel', () => silentDragging = false);
+
+  // Tidslinje-klik = hop view-vindue derhen
+  silentTimelineCanvas.addEventListener('pointerdown', (e) => {
+    if (silentBuffer.length < 2) return;
+    const rect = silentTimelineCanvas.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const firstT = silentBuffer[0].t;
+    const lastT = silentBuffer[silentBuffer.length - 1].t;
+    silentFollowLive = false;
+    silentViewEndMs = firstT + frac * (lastT - firstT);
+    silentClampView();
+    silentUpdateButtons();
+  });
+
+  silentUpdateButtons();
+  requestAnimationFrame(silentDrawLoop);
+}
+
+function silentSetStation(stationMsg) {
+  const stateEl = document.getElementById('s-station-state');
+  const waitEl = document.getElementById('s-waiting');
+  if (!stationMsg) {
+    silentStationName = null;
+    stateEl.textContent = 'Venter på station';
+    stateEl.className = 'silent-station-state gone';
+    waitEl.style.display = '';
+  } else {
+    silentStationName = stationMsg.name || ('S' + stationMsg.id);
+    stateEl.textContent = silentStationName + ' lytter';
+    stateEl.className = 'silent-station-state ready';
+    waitEl.style.display = 'none';
+  }
+}
+
+function silentPushData(msg) {
+  if (!silentRecording) return;
+  const t = msg.t || Date.now();
+  const z = msg.z;
+  silentBuffer.push({ t, z });
+  if (silentBuffer.length > SILENT_BUFFER_MAX) silentBuffer.shift();
+
+  // Opdater amp-stat tekst
+  document.getElementById('s-amp').textContent = (Math.abs(msg.peak || z)).toFixed(3) + ' m/s²';
+}
+
+function silentClampView() {
+  if (!silentBuffer.length) return;
+  const firstT = silentBuffer[0].t;
+  const lastT = silentBuffer[silentBuffer.length - 1].t;
+  if (silentViewEndMs > lastT) silentViewEndMs = lastT;
+  if (silentViewEndMs - silentViewMs < firstT) {
+    silentViewEndMs = Math.min(lastT, firstT + silentViewMs);
+  }
+}
+
+function silentUpdateButtons() {
+  document.getElementById('s-btn-start').style.display = silentRecording ? 'none' : '';
+  document.getElementById('s-btn-pause').style.display = silentRecording ? '' : 'none';
+  document.getElementById('s-btn-live').style.display = silentFollowLive ? 'none' : '';
+  silentCanvas.classList.toggle('live', silentFollowLive);
+  const ind = document.getElementById('s-indicator');
+  if (silentFollowLive && silentRecording) {
+    ind.textContent = 'Live';
+    ind.className = 'live-indicator';
+  } else {
+    ind.textContent = 'Pause · scrollback';
+    ind.className = 'live-indicator paused';
+  }
+}
+
+function silentDrawLoop() {
+  if (!document.getElementById('scr-silent').classList.contains('active')) {
+    requestAnimationFrame(silentDrawLoop);
+    return;
+  }
+  silentDrawMain();
+  silentDrawTimeline();
+  requestAnimationFrame(silentDrawLoop);
+}
+
+function silentResize(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return [0, 0, null];
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr; canvas.height = h * dpr;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return [w, h, ctx];
+}
+
+function silentDrawMain() {
+  const [w, h, ctx] = silentResize(silentCanvas);
+  if (!ctx) return;
+  ctx.clearRect(0, 0, w, h);
+
+  if (silentBuffer.length < 2) {
+    return; // venter-overlay vises i HTML
+  }
+
+  // Bestem view-vindue
+  const lastT = silentBuffer[silentBuffer.length - 1].t;
+  const viewEnd = silentFollowLive ? lastT : silentViewEndMs;
+  const viewStart = viewEnd - silentViewMs;
+
+  // Filtrer samples i view
+  const visible = [];
+  for (let i = silentBuffer.length - 1; i >= 0; i--) {
+    const s = silentBuffer[i];
+    if (s.t > viewEnd) continue;
+    if (s.t < viewStart) break;
+    visible.push(s);
+  }
+  visible.reverse();
+
+  if (visible.length < 2) return;
+
+  // Auto-skala med EMA (smooth)
+  let maxAbs = 0;
+  for (const s of visible) {
+    const a = Math.abs(s.z);
+    if (a > maxAbs) maxAbs = a;
+  }
+  const targetScale = Math.max(maxAbs * 1.2, 0.02);
+  silentAmpScale = silentAmpScale + (targetScale - silentAmpScale) * 0.15;
+
+  const mid = h / 2;
+
+  // Grid (horisontale linjer)
+  ctx.strokeStyle = 'rgba(255,255,255,.04)';
+  ctx.lineWidth = 0.5;
+  for (let i = 1; i <= 4; i++) {
+    const dy = (h / 10) * i;
+    ctx.beginPath(); ctx.moveTo(0, mid - dy); ctx.lineTo(w, mid - dy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, mid + dy); ctx.lineTo(w, mid + dy); ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.12)';
+  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+
+  // Vertikale tids-tick-marker
+  const tickMs = silentNiceInterval(silentViewMs, 6);
+  const firstTick = Math.ceil(viewStart / tickMs) * tickMs;
+  ctx.strokeStyle = 'rgba(255,255,255,.04)';
+  ctx.fillStyle = 'rgba(255,255,255,.25)';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  for (let t = firstTick; t <= viewEnd; t += tickMs) {
+    const x = ((t - viewStart) / silentViewMs) * w;
+    ctx.beginPath(); ctx.moveTo(x, h - 14); ctx.lineTo(x, h - 8); ctx.stroke();
+    const secsAgo = Math.round((lastT - t) / 1000);
+    const label = secsAgo === 0 ? 'nu' : '−' + silentFormatTime(secsAgo);
+    ctx.fillText(label, x, h - 2);
+  }
+
+  // Trace
+  ctx.strokeStyle = silentFollowLive ? '#00b4d8' : '#ef8a17';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  for (let i = 0; i < visible.length; i++) {
+    const s = visible[i];
+    const x = ((s.t - viewStart) / silentViewMs) * w;
+    const y = mid - (s.z / silentAmpScale) * (h * 0.42);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Fill under
+  ctx.fillStyle = silentFollowLive ? 'rgba(0,180,216,.07)' : 'rgba(239,138,23,.06)';
+  ctx.beginPath();
+  for (let i = 0; i < visible.length; i++) {
+    const s = visible[i];
+    const x = ((s.t - viewStart) / silentViewMs) * w;
+    const y = mid - (s.z / silentAmpScale) * (h * 0.42);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  if (visible.length) {
+    const lastX = ((visible[visible.length - 1].t - viewStart) / silentViewMs) * w;
+    const firstX = ((visible[0].t - viewStart) / silentViewMs) * w;
+    ctx.lineTo(lastX, mid); ctx.lineTo(firstX, mid);
+  }
+  ctx.closePath(); ctx.fill();
+
+  // Labels
+  document.getElementById('s-amp-label').textContent = '±' + silentAmpScale.toFixed(3) + ' m/s²';
+  document.getElementById('s-time-label').textContent = silentFormatTime(silentViewMs / 1000) + ' vindue';
+}
+
+function silentDrawTimeline() {
+  const [w, h, ctx] = silentResize(silentTimelineCanvas);
+  if (!ctx) return;
+  ctx.clearRect(0, 0, w, h);
+
+  if (silentBuffer.length < 2) return;
+
+  const firstT = silentBuffer[0].t;
+  const lastT = silentBuffer[silentBuffer.length - 1].t;
+  const totalMs = lastT - firstT;
+  if (totalMs <= 0) return;
+
+  // Down-sample for thumbnail (max ~w punkter)
+  const step = Math.max(1, Math.floor(silentBuffer.length / w));
+  const mid = h / 2;
+  let maxAbs = 0;
+  for (let i = 0; i < silentBuffer.length; i += step) {
+    const a = Math.abs(silentBuffer[i].z);
+    if (a > maxAbs) maxAbs = a;
+  }
+  const scale = Math.max(maxAbs * 1.1, 0.02);
+
+  // Thumbnail-trace
+  ctx.strokeStyle = 'rgba(0,180,216,.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  let first = true;
+  for (let i = 0; i < silentBuffer.length; i += step) {
+    const s = silentBuffer[i];
+    const x = ((s.t - firstT) / totalMs) * w;
+    const y = mid - (s.z / scale) * (h * 0.45);
+    first ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    first = false;
+  }
+  ctx.stroke();
+
+  // View-window rektangel
+  const viewEnd = silentFollowLive ? lastT : silentViewEndMs;
+  const viewStart = viewEnd - silentViewMs;
+  const xStart = Math.max(0, ((viewStart - firstT) / totalMs) * w);
+  const xEnd = Math.min(w, ((viewEnd - firstT) / totalMs) * w);
+  ctx.fillStyle = silentFollowLive ? 'rgba(0,180,216,.18)' : 'rgba(239,138,23,.22)';
+  ctx.fillRect(xStart, 0, Math.max(2, xEnd - xStart), h);
+  ctx.strokeStyle = silentFollowLive ? 'rgba(0,180,216,.6)' : 'rgba(239,138,23,.7)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(xStart, 0, Math.max(2, xEnd - xStart), h);
+}
+
+function silentNiceInterval(rangeMs, targetTicks) {
+  const raw = rangeMs / targetTicks;
+  const candidates = [100, 200, 500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000, 300000];
+  for (const c of candidates) if (c >= raw) return c;
+  return 600000;
+}
+
+function silentFormatTime(secs) {
+  if (secs < 1) return Math.round(secs * 1000) + ' ms';
+  if (secs < 60) return secs.toFixed(secs < 10 ? 1 : 0) + ' s';
+  const m = Math.floor(secs / 60);
+  const s = Math.round(secs % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s + ' min';
+}
 </script>
 </body>
 </html>

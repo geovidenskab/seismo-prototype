@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Seismograf">
+  <rect width="512" height="512" fill="#0a0f3c"/>
+  <circle cx="256" cy="256" r="208" fill="none" stroke="#00b4d8" stroke-opacity="0.18" stroke-width="3"/>
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#00b4d8" stroke-opacity="0.1" stroke-width="2"/>
+  <line x1="80" y1="256" x2="432" y2="256" stroke="#f5f0e8" stroke-opacity="0.12" stroke-width="2"/>
+  <path d="M 80 256 L 150 256 L 165 252 L 180 258 L 195 256 L 210 248 L 225 264 L 240 220 L 252 300 L 264 196 L 276 314 L 290 240 L 305 264 L 320 254 L 335 258 L 350 254 L 365 257 L 432 256"
+        fill="none" stroke="#00b4d8" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="264" cy="196" r="9" fill="#ef8a17"/>
+</svg>

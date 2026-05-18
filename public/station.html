@@ -3,8 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Seismograf — Station</title>
+
+<!-- PWA: installerbar som home-screen-app -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a0f3c">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="apple-touch-icon" href="/icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Seismograf">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 :root { --navy: #0a0f3c; --warm: #f5f0e8; --sand: #e8dfd0; --cyan: #00b4d8;
   --red: #e63946; --green: #2a9d8f; --orange: #ef8a17; }
@@ -182,9 +191,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <span style="font-size:.85rem;color:var(--green);font-weight:500" id="ready-name">Station klar</span>
   </div>
   <div class="info-grid" id="station-info"></div>
-  <div class="desc" style="margin-top:.5rem">Forbundne stationer:</div>
+  <div class="desc" style="margin-top:.5rem" id="ready-peers-label">Forbundne stationer:</div>
   <div class="peers" id="peers-list"></div>
-  <div class="wait-msg">Venter på at <strong>læreren starter</strong><br>optagelse...</div>
+  <div class="wait-msg" id="ready-wait-msg">Venter på at <strong>læreren starter</strong><br>optagelse...</div>
   <div class="spacer"></div>
   <button class="btn btn-outline" id="btn-disconnect" style="font-size:.75rem">Afbryd forbindelse</button>
 </div>
@@ -213,6 +222,7 @@ let sessionCode = '';
 let stationId = '';
 let stationName = '';
 let stationNumber = 0;
+let sessionMode = 'wavespeed';  // 'silent' | 'wavespeed'
 let gpsLat = null, gpsLng = null;
 let timeOffset = 0;
 let noiseFloor = 0;
@@ -222,7 +232,8 @@ let isRecording = false;
 // High-pass filter state
 let prevFiltered = 0;
 let prevRaw = 0;
-const ALPHA = 0.95; // High-pass filter coefficient (~0.5 Hz cutoff at 60 Hz)
+const ALPHA_WAVESPEED = 0.95; // ~0.5 Hz cutoff — fanger triggers
+const ALPHA_SILENT    = 0.50; // mild high-pass — fanger også langsommere bevægelser
 
 // STA/LTA trigger
 let sta = 0, lta = 0.1;
@@ -314,9 +325,10 @@ function connectToSession(code) {
 function handleMessage(msg) {
   switch (msg.type) {
     case 'welcome':
-      stationId = msg.id;
+      stationId = msg.stationId || msg.id;
       stationName = msg.name;
       stationNumber = parseInt(msg.name.replace('S', ''));
+      sessionMode = msg.mode || 'wavespeed';
       showScreen('scr-perm');
       document.getElementById('perm-session-label').textContent = 'Session ' + sessionCode;
       document.getElementById('calib-session-label').textContent = 'Session ' + sessionCode;
@@ -324,7 +336,8 @@ function handleMessage(msg) {
       break;
 
     case 'error':
-      showJoinStatus(msg.message, 'err');
+      showJoinStatus(msg.msg || msg.message || 'Fejl', 'err');
+      if (ws) try { ws.close(); } catch(e) {}
       break;
 
     case 'station:joined':
@@ -417,9 +430,15 @@ function startCalibration() {
   const syncEl = document.getElementById('calib-sync');
   const pctEl = document.getElementById('calib-pct');
 
+  // I silent-mode behøver vi ikke tidssync (kun én station)
+  const skipSync = sessionMode === 'silent';
+  if (skipSync) {
+    syncEl.style.display = 'none';
+  }
+
   let calibSamples = [];
   let calibDone = false;
-  let syncDone = false;
+  let syncDone = skipSync;  // automatisk færdig hvis vi springer over
   let syncCount = 0;
   const SYNC_TOTAL = 8;
   const syncOffsets = [];
@@ -464,10 +483,11 @@ function startCalibration() {
       origHandler(msg);
     }
   };
-  // Monkey-patch message handler midlertidigt
-  ws.onmessage = (e) => syncHandler(JSON.parse(e.data));
-
-  doSyncPing();
+  // Monkey-patch message handler midlertidigt (kun hvis vi rent faktisk synker)
+  if (!skipSync) {
+    ws.onmessage = (e) => syncHandler(JSON.parse(e.data));
+    doSyncPing();
+  }
 
   // Progress + støjmåling
   let progress = 0;
@@ -519,13 +539,29 @@ function startCalibration() {
     setTimeout(() => {
       showScreen('scr-ready');
       document.getElementById('ready-name').textContent = stationName + ' klar';
-      document.getElementById('station-info').innerHTML = `
-        <div class="info-row"><span class="lbl">Station</span><span class="val">${stationName}</span></div>
-        <div class="info-row"><span class="lbl">Position</span><span class="val">${gpsLat?.toFixed(3)}°N, ${gpsLng?.toFixed(3)}°Ø</span></div>
-        <div class="info-row"><span class="lbl">Samplingrate</span><span class="val cyan">${sampleRate} Hz</span></div>
-        <div class="info-row"><span class="lbl">Tids-offset</span><span class="val">${timeOffset > 0 ? '+' : ''}${Math.round(timeOffset)} ms</span></div>
-        <div class="info-row"><span class="lbl">Støjniveau</span><span class="val">${noiseFloor.toFixed(3)} m/s²</span></div>
-      `;
+
+      // Mode-afhængig info-grid + besked
+      if (sessionMode === 'silent') {
+        document.getElementById('station-info').innerHTML = `
+          <div class="info-row"><span class="lbl">Øvelse</span><span class="val cyan">Hvor stille kan du være?</span></div>
+          <div class="info-row"><span class="lbl">Station</span><span class="val">${stationName}</span></div>
+          <div class="info-row"><span class="lbl">Samplingrate</span><span class="val cyan">${sampleRate} Hz</span></div>
+          <div class="info-row"><span class="lbl">Støjniveau</span><span class="val">${noiseFloor.toFixed(3)} m/s²</span></div>
+        `;
+        document.getElementById('ready-peers-label').style.display = 'none';
+        document.getElementById('peers-list').style.display = 'none';
+        document.getElementById('ready-wait-msg').innerHTML =
+          'Læg telefonen <strong>fladt på bordet</strong>.<br>Stationen sender allerede — kig på tavlen.';
+      } else {
+        document.getElementById('station-info').innerHTML = `
+          <div class="info-row"><span class="lbl">Station</span><span class="val">${stationName}</span></div>
+          <div class="info-row"><span class="lbl">Position</span><span class="val">${gpsLat?.toFixed(3)}°N, ${gpsLng?.toFixed(3)}°Ø</span></div>
+          <div class="info-row"><span class="lbl">Samplingrate</span><span class="val cyan">${sampleRate} Hz</span></div>
+          <div class="info-row"><span class="lbl">Tids-offset</span><span class="val">${timeOffset > 0 ? '+' : ''}${Math.round(timeOffset)} ms</span></div>
+          <div class="info-row"><span class="lbl">Støjniveau</span><span class="val">${noiseFloor.toFixed(3)} m/s²</span></div>
+        `;
+      }
+
       startAccelerometerStream();
     }, 600);
   }
@@ -571,23 +607,26 @@ function onLiveMotion(e) {
 
   const rawZ = acc.z || 0;
 
-  // High-pass filter: y[n] = α * (y[n-1] + x[n] - x[n-1])
-  const hpFiltered = ALPHA * (prevFiltered + rawZ - prevRaw);
+  // Mode-afhængigt high-pass-filter
+  const alpha = sessionMode === 'silent' ? ALPHA_SILENT : ALPHA_WAVESPEED;
+  const hpFiltered = alpha * (prevFiltered + rawZ - prevRaw);
   prevRaw = rawZ;
   prevFiltered = hpFiltered;
 
   const absVal = Math.abs(hpFiltered);
 
-  // STA/LTA trigger
-  const dt = 1 / Math.max(sampleRate, 30);
-  sta = sta + (absVal - sta) * (dt / STA_LEN);
-  lta = lta + (absVal - lta) * (dt / LTA_LEN);
-  const ratio = lta > 0.001 ? sta / lta : 0;
+  // STA/LTA trigger — kun relevant i wavespeed-mode
+  if (sessionMode !== 'silent') {
+    const dt = 1 / Math.max(sampleRate, 30);
+    sta = sta + (absVal - sta) * (dt / STA_LEN);
+    lta = lta + (absVal - lta) * (dt / LTA_LEN);
+    const ratio = lta > 0.001 ? sta / lta : 0;
 
-  if (ratio > 3 && !triggered) {
-    triggered = true;
-    send({ type: 'trigger', t: Date.now() + timeOffset, amplitude: absVal });
-    setTimeout(() => { triggered = false; }, 2000);
+    if (ratio > 3 && !triggered) {
+      triggered = true;
+      send({ type: 'trigger', t: Date.now() + timeOffset, amplitude: absVal });
+      setTimeout(() => { triggered = false; }, 2000);
+    }
   }
 
   // Opsaml til seismogram
@@ -601,10 +640,11 @@ function onLiveMotion(e) {
     document.getElementById('lv-z').textContent = rawZ.toFixed(2);
   }
 
-  // Batch og send data
+  // Batch og send data — i silent-mode altid, i wavespeed kun under optagelse
   batchBuffer.push({ t: Date.now() + timeOffset, z: hpFiltered });
   const now = performance.now();
-  if (now - lastSendTime > SEND_INTERVAL && batchBuffer.length > 0 && isRecording) {
+  const shouldSend = sessionMode === 'silent' || isRecording;
+  if (now - lastSendTime > SEND_INTERVAL && batchBuffer.length > 0 && shouldSend) {
     const peak = Math.max(...batchBuffer.map(s => Math.abs(s.z)));
     const avg = batchBuffer.reduce((a, s) => a + s.z, 0) / batchBuffer.length;
     send({

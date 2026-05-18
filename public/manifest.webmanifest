@@ -1,0 +1,27 @@
+{
+  "name": "Seismograf — Sans Science",
+  "short_name": "Seismograf",
+  "description": "Din telefon som seismisk station. Kom til kernen, inspireret af Inge Lehmann.",
+  "start_url": "/station.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0f3c",
+  "theme_color": "#0a0f3c",
+  "lang": "da",
+  "categories": ["education", "science"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ]
+}

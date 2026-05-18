@@ -1,6 +1,14 @@
 # Kom til kernen — Seismisk netværk
 
-Prototype: smartphones som seismiske stationer i et klasserum-netværk.
+Prototype: smartphones som seismiske stationer i et klasserum-netværk. Inspireret af Inge Lehmanns opdagelse af Jordens indre kerne — eleverne bliver netværket.
+
+## To øvelser
+
+På dashboardet vælges en af to øvelser når en session oprettes:
+
+**🔇 Hvor stille kan du være?** — én elevtelefon, kontinuerligt live-signal projiceret på lærertavlen. Ingen optagelses-knap; bare lyt og scroll tilbage hvis I så noget spændende. Mild high-pass + auto-skalering fanger selv hvisken. (Mode A — fuldt færdig)
+
+**📐 Mål bølgehastigheden** — flere telefoner i kendt afstand, bank på bordet, mål Δt mellem trigger-tider. Klassisk countdown + optagelse + review-flow. (Mode B — afstands-input og hastigheds-beregning kommer i næste etape; selve flow'et virker)
 
 ## Hurtig start
 
@@ -9,16 +17,16 @@ npm install
 npm run dev        # starter server med --watch
 ```
 
-Åbn `http://localhost:3000` — vælg "Opret session" (dashboard) eller "Tilslut station" (telefon).
+Åbn `http://localhost:3000` — vælg "Åbn lærer-dashboard" og pluk en øvelse.
 
 ## Sådan tester du
 
-1. Åbn dashboard i en browser: `http://localhost:3000/dashboard/`
-2. Tryk "Opret nyt seismisk netværk" → du får en 4-cifret kode og QR
-3. Åbn station-URL på din telefon (samme netværk): `http://<din-ip>:3000/station/?code=XXXX`
-4. Giv tilladelser → kalibrering → station er klar
-5. Tryk "Countdown + start" på dashboardet
-6. Bank på bordet ved telefonen → se seismogrammet
+1. Åbn dashboard: `http://localhost:3000/dashboard.html`
+2. Vælg en øvelse — du får en 4-cifret kode og QR
+3. Åbn station-URL på telefonen (samme netværk): `http://<din-ip>:3000/station.html?code=XXXX`
+4. Giv tilladelser → kalibrering → stationen kører
+5. **Mode A**: læg telefon på bordet → signal vises live; tryk Pause for at spole tilbage
+6. **Mode B**: tryk "Countdown + start" → bank på bordet → seismogram fyldes
 
 ### Test på telefon (kræver HTTPS eller localhost)
 

@@ -61,9 +61,11 @@ app.get('/api/info', (req, res) => {
 });
 
 app.post('/api/session', (req, res) => {
+  const mode = req.body?.mode === 'silent' ? 'silent' : 'wavespeed';
   const code = genCode();
   sessions.set(code, {
     code,
+    mode,
     created: Date.now(),
     expires: Date.now() + 2 * 3600000,
     stations: new Map(),
@@ -71,8 +73,8 @@ app.post('/api/session', (req, res) => {
     nextStationId: 1,
     recording: false
   });
-  console.log('Session oprettet: ' + code);
-  res.json({ code });
+  console.log('Session oprettet: ' + code + ' (' + mode + ')');
+  res.json({ code, mode });
 });
 
 app.get('/api/session/:code/qr', async (req, res) => {
@@ -91,7 +93,7 @@ app.get('/api/session/:code/qr', async (req, res) => {
 app.get('/api/session/:code', (req, res) => {
   const s = getSession(req.params.code);
   if (!s) return res.status(404).json({ error: 'Ikke fundet' });
-  res.json({ code: s.code, stations: stationList(s), recording: s.recording });
+  res.json({ code: s.code, mode: s.mode, stations: stationList(s), recording: s.recording });
 });
 
 app.post('/api/session/:code/control', (req, res) => {
@@ -106,10 +108,10 @@ app.post('/api/session/:code/control', (req, res) => {
       s.recording = true;
       broadcastToRoom(req.params.code, { type: 'recording:start' });
     }, secs * 1000);
-  } else if (action === 'start') {
+  } else if (action === 'start' || action === 'silent:start') {
     s.recording = true;
     broadcastToRoom(req.params.code, { type: 'recording:start' });
-  } else if (action === 'stop') {
+  } else if (action === 'stop' || action === 'silent:stop') {
     s.recording = false;
     broadcastToRoom(req.params.code, { type: 'recording:stop' });
   } else if (action === 'reset') {
@@ -136,7 +138,7 @@ wss.on('connection', (ws, req) => {
   // ─── Dashboard ────────────────────────────────────
   if (role === 'dashboard') {
     session.dashboards.push(ws);
-    ws.send(JSON.stringify({ type: 'init', stations: stationList(session), recording: session.recording }));
+    ws.send(JSON.stringify({ type: 'init', mode: session.mode, stations: stationList(session), recording: session.recording }));
 
     ws.on('close', () => {
       session.dashboards = session.dashboards.filter(d => d !== ws);
@@ -158,12 +160,22 @@ wss.on('connection', (ws, req) => {
   }
 
   // ─── Station ──────────────────────────────────────
+  // Silent-mode tillader kun én station ad gangen
+  if (session.mode === 'silent' && session.stations.size >= 1) {
+    ws.send(JSON.stringify({
+      type: 'error',
+      msg: 'Denne øvelse bruger kun én telefon — der er allerede tilsluttet en station.'
+    }));
+    ws.close();
+    return;
+  }
+
   const stationId = session.nextStationId++;
   ws._info = { name: 'S' + stationId, status: 'connecting' };
   ws._stationId = stationId;
   session.stations.set(stationId, ws);
 
-  ws.send(JSON.stringify({ type: 'welcome', stationId, name: 'S' + stationId, recording: session.recording }));
+  ws.send(JSON.stringify({ type: 'welcome', stationId, name: 'S' + stationId, mode: session.mode, recording: session.recording }));
   broadcastToRoom(code, {
     type: 'station:joined',
     id: stationId, name: 'S' + stationId, status: 'connecting',
