@@ -529,11 +529,24 @@ function startCalibration() {
   const SYNC_TOTAL = 8;
   const syncOffsets = [];
 
-  // Samle accelerometer-data for støjmåling
+  // Samle accelerometer-data for støjmåling.
+  // Vi kører samme high-pass-filter som vil blive brugt live, så støjniveauet
+  // matcher det signal brugeren faktisk ser — ikke det rå signal med tyngdekraft+drift.
+  let calibPrevRaw = null;
+  let calibPrevFiltered = 0;
+  const calibFilterAlpha = sessionMode === 'silent' ? ALPHA_SILENT : ALPHA_WAVESPEED;
   function onMotion(e) {
     const acc = e.accelerationIncludingGravity;
     if (!acc) return;
-    calibSamples.push({ z: acc.z || 0, t: performance.now() });
+    const z = acc.z || 0;
+    if (calibPrevRaw === null) {
+      calibPrevRaw = z;  // pre-seed så vi ikke får transient fra (0 → 9.8)
+      return;
+    }
+    const filtered = calibFilterAlpha * (calibPrevFiltered + z - calibPrevRaw);
+    calibPrevRaw = z;
+    calibPrevFiltered = filtered;
+    calibSamples.push({ z: z, filtered: filtered, t: performance.now() });
   }
   window.addEventListener('devicemotion', onMotion);
 
@@ -587,12 +600,14 @@ function startCalibration() {
       clearInterval(progressIv);
       window.removeEventListener('devicemotion', onMotion);
 
-      // Beregn støjniveau (std af Z-akse)
-      if (calibSamples.length > 10) {
-        const zVals = calibSamples.map(s => s.z);
-        const mean = zVals.reduce((a, b) => a + b, 0) / zVals.length;
-        const variance = zVals.reduce((a, z) => a + (z - mean) ** 2, 0) / zVals.length;
-        noiseFloor = Math.sqrt(variance);
+      // Beregn støjniveau på det FILTRREDE signal (det brugeren faktisk ser)
+      // Drop første 1/4 af samples — filteret er stadig ved at konvergere
+      if (calibSamples.length > 20) {
+        const skip = Math.floor(calibSamples.length / 4);
+        const fVals = calibSamples.slice(skip).map(s => s.filtered);
+        const fMean = fVals.reduce((a, b) => a + b, 0) / fVals.length;
+        const fVar = fVals.reduce((a, z) => a + (z - fMean) ** 2, 0) / fVals.length;
+        noiseFloor = Math.sqrt(fVar);
 
         // Estimér samplingrate
         const dt = (calibSamples[calibSamples.length - 1].t - calibSamples[0].t) / 1000;
