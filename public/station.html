@@ -443,7 +443,23 @@ function send(msg) {
 // ═══════════════════════════════════════════════════════════
 // SCREEN 1: PERMISSIONS
 // ═══════════════════════════════════════════════════════════
-document.getElementById('btn-grant').addEventListener('click', requestPermissions);
+document.getElementById('btn-grant').addEventListener('click', () => {
+  // Wake lock SKAL kaldes synkront i user-gesture-klikket på iOS Safari
+  // Vi venter ikke på Promise her — fire-and-forget, status vises via badge senere
+  if ('wakeLock' in navigator) {
+    navigator.wakeLock.request('screen').then(lock => {
+      wakeLock = lock;
+      lock.addEventListener('release', () => { wakeLock = null; updateWakeBadge(false); });
+      updateWakeBadge(true);
+    }).catch(e => {
+      console.warn('Wake lock fejlede:', e.message);
+      updateWakeBadge(false);
+    });
+  } else {
+    updateWakeBadge('unsupported');
+  }
+  requestPermissions();
+});
 
 async function requestPermissions() {
   const accBadge = document.getElementById('perm-acc-badge');
@@ -670,7 +686,8 @@ function startAccelerometerStream() {
   prevRaw = 0;
   prevFiltered = 0;
   window.addEventListener('devicemotion', onLiveMotion);
-  requestWakeLock();  // forhindre at telefonen går i dvale
+  // Wake lock kaldes IKKE her — iOS Safari kræver user-gesture-context,
+  // som er væk efter 5-15 sek kalibrering. Det sker i 'Giv tilladelser'-klik i stedet.
 }
 
 function onLiveMotion(e) {

@@ -1369,7 +1369,10 @@ function silentDrawMain() {
       const a = Math.abs(s.z);
       if (a > maxAbs) maxAbs = a;
     }
-    const targetScale = Math.max(maxAbs * 1.25, 0.02);
+    // Minimum skala = 4× støjniveau så støj-zonen aldrig fylder mere end ~20% af synshøjden
+    // og der altid er plads til at se signal stikke ud
+    const minScale = silentNoiseFloor > 0 ? silentNoiseFloor * 4 : 0.02;
+    const targetScale = Math.max(maxAbs * 1.25, minScale);
     // Asymmetrisk EMA: hurtigt op (fang transient), langsomt ned (rolig genopretning)
     const ema = targetScale > silentAmpScale ? SILENT_EMA_FAST : SILENT_EMA_SLOW;
     silentAmpScale = silentAmpScale + (targetScale - silentAmpScale) * ema;
