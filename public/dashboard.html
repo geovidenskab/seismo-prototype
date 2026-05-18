@@ -362,11 +362,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 
     <div class="silent-set-row">
       <div class="silent-set-label">
-        <span>Følsomhed (high-pass α)</span>
+        <span>Drift-filter (high-pass α)</span>
         <span class="val" id="s-set-alpha-val">0.50</span>
       </div>
       <input type="range" id="s-set-alpha" min="0.10" max="0.95" step="0.05" value="0.50">
-      <div class="silent-set-hint">Lav = fanger langsomme udsving og drift · Høj = kun hurtige rystelser</div>
+      <div class="silent-set-hint">Bemærk: α påvirker kun <strong>langsomme udsving</strong> (under ~2 Hz). Klap og bank kommer altid igennem uanset værdi. Lav α = renere baseline (men telefon må ligge stille). Høj α = fanger også vejrtrækning og tilt, men kan vise drift.</div>
     </div>
 
     <div class="silent-set-row">
@@ -1377,23 +1377,33 @@ function silentDrawMain() {
 
   const mid = h / 2;
 
-  // Støj-zone: grå skygge ±noiseFloor — tydeliggør hvad der er "rigtigt signal"
+  // Støj-zone: tydelig skygge ±noiseFloor — viser hvad der er "rigtigt signal"
   if (silentShowNoiseZone && silentNoiseFloor > 0) {
-    const zoneHalfHeight = (silentNoiseFloor / silentAmpScale) * (h * 0.42);
-    if (zoneHalfHeight > 0.5 && zoneHalfHeight < h * 0.45) {
-      ctx.fillStyle = 'rgba(245,240,232,.04)';
-      ctx.fillRect(0, mid - zoneHalfHeight, w, zoneHalfHeight * 2);
-      ctx.strokeStyle = 'rgba(245,240,232,.08)';
-      ctx.lineWidth = 0.5;
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath(); ctx.moveTo(0, mid - zoneHalfHeight); ctx.lineTo(w, mid - zoneHalfHeight); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, mid + zoneHalfHeight); ctx.lineTo(w, mid + zoneHalfHeight); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(245,240,232,.25)';
-      ctx.font = '9px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('støj ±' + silentNoiseFloor.toFixed(3), 4, mid + zoneHalfHeight + 11);
-    }
+    // Begræns til canvas-grænser så zonen altid er synlig (klampe til max ±45% af h)
+    const rawHalf = (silentNoiseFloor / silentAmpScale) * (h * 0.42);
+    const zoneHalfHeight = Math.max(2, Math.min(rawHalf, h * 0.45));
+    const isClamped = rawHalf > h * 0.45;
+
+    // Fyld
+    ctx.fillStyle = isClamped ? 'rgba(239,138,23,.10)' : 'rgba(245,240,232,.10)';
+    ctx.fillRect(0, mid - zoneHalfHeight, w, zoneHalfHeight * 2);
+
+    // Grænselinjer — tydelige
+    ctx.strokeStyle = isClamped ? 'rgba(239,138,23,.5)' : 'rgba(245,240,232,.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(0, mid - zoneHalfHeight); ctx.lineTo(w, mid - zoneHalfHeight); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, mid + zoneHalfHeight); ctx.lineTo(w, mid + zoneHalfHeight); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label
+    ctx.fillStyle = isClamped ? 'rgba(239,138,23,.85)' : 'rgba(245,240,232,.55)';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    const txt = isClamped
+      ? 'støj-zone ±' + silentNoiseFloor.toFixed(3) + ' (uden for skala)'
+      : 'støj-zone ±' + silentNoiseFloor.toFixed(3) + ' m/s²';
+    ctx.fillText(txt, 8, mid - zoneHalfHeight - 5);
   }
 
   // Grid (horisontale linjer)

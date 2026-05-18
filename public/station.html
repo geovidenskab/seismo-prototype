@@ -117,6 +117,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   background: rgba(230,57,70,.15); color: var(--red); border-radius: 10px;
   font-size: .6rem; font-weight: 600; z-index: 5; animation: recBlink 1s step-end infinite; }
 @keyframes recBlink { 50% { opacity: .3; } }
+
+.wake-badge { position: absolute; top: 8px; left: 8px; padding: 3px 9px;
+  border-radius: 10px; font-size: .6rem; font-weight: 600; z-index: 5; }
+.wake-badge.active { background: rgba(42,157,143,.15); color: var(--green); }
+.wake-badge.warn   { background: rgba(239,138,23,.15); color: var(--orange); }
+
+.params-row { display: grid; grid-template-columns: 1fr 1fr; gap: .4rem; margin: .5rem 0; }
+.params-row .ax { padding: .3rem; }
+.params-row .ax-val { font-size: .85rem; }
 </style>
 </head>
 <body>
@@ -206,10 +215,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <div class="ax"><div class="ax-label">Y</div><div class="ax-val" id="lv-y">—</div></div>
     <div class="ax"><div class="ax-label">Z</div><div class="ax-val" id="lv-z">—</div></div>
   </div>
+  <div class="params-row">
+    <div class="ax"><div class="ax-label">filter α</div><div class="ax-val" id="lv-alpha">—</div></div>
+    <div class="ax"><div class="ax-label">send-rate</div><div class="ax-val" id="lv-rate">—</div></div>
+  </div>
   <div class="canvas-wrap">
     <canvas id="seismo-canvas"></canvas>
     <div class="countdown-overlay" id="countdown-overlay"></div>
     <div class="rec-badge" id="rec-badge">OPTAGELSE</div>
+    <div class="wake-badge" id="wake-badge">—</div>
   </div>
 </div>
 
@@ -238,6 +252,46 @@ const ALPHA_SILENT    = 0.50; // mild high-pass — fanger også langsommere bev
 // Dynamiske parametre (kan styres fra dashboard via 'station:settings'-beskeder)
 let currentAlpha = ALPHA_SILENT;
 let currentSendInterval = 50;
+
+// Wake lock — forhindrer iOS/Android i auto-lock så længe siden er aktiv
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => {
+        wakeLock = null;
+        updateWakeBadge(false);
+      });
+      updateWakeBadge(true);
+    } else {
+      updateWakeBadge('unsupported');
+    }
+  } catch (e) {
+    console.warn('Wake lock fejlede:', e.message);
+    updateWakeBadge(false);
+  }
+}
+function updateWakeBadge(state) {
+  const badge = document.getElementById('wake-badge');
+  if (!badge) return;
+  if (state === true) {
+    badge.textContent = '🔓 vågen';
+    badge.className = 'wake-badge active';
+  } else if (state === 'unsupported') {
+    badge.textContent = 'auto-lås aktiv';
+    badge.className = 'wake-badge warn';
+  } else {
+    badge.textContent = '🔒 slukket';
+    badge.className = 'wake-badge warn';
+  }
+}
+// Re-request når siden bliver synlig igen (efter app-switch eller temporary lock)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && !wakeLock) {
+    requestWakeLock();
+  }
+});
 
 // STA/LTA trigger
 let sta = 0, lta = 0.1;
@@ -616,6 +670,7 @@ function startAccelerometerStream() {
   prevRaw = 0;
   prevFiltered = 0;
   window.addEventListener('devicemotion', onLiveMotion);
+  requestWakeLock();  // forhindre at telefonen går i dvale
 }
 
 function onLiveMotion(e) {
@@ -661,11 +716,13 @@ function onLiveMotion(e) {
   samples.push(hpFiltered);
   if (samples.length > MAX_SAMPLES) samples.shift();
 
-  // Opdater UI
+  // Opdater UI (kun hvis live-skærmen er aktiv)
   if (document.getElementById('scr-live').classList.contains('active')) {
     document.getElementById('lv-x').textContent = (acc.x || 0).toFixed(2);
     document.getElementById('lv-y').textContent = (acc.y || 0).toFixed(2);
     document.getElementById('lv-z').textContent = rawZ.toFixed(2);
+    document.getElementById('lv-alpha').textContent = currentAlpha.toFixed(2);
+    document.getElementById('lv-rate').textContent = Math.round(1000 / currentSendInterval) + ' Hz';
   }
 
   // Batch og send data — i silent-mode altid, i wavespeed kun under optagelse
