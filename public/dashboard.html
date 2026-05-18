@@ -75,6 +75,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .seismo-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .seismo-label { font-size: .6rem; opacity: .35; width: 28px; text-align: right; flex-shrink: 0; }
 .seismo-canvas { flex: 1; height: 28px; background: rgba(255,255,255,.02); border-radius: 3px; }
+.seismo-pos { width: 78px; flex-shrink: 0; background: rgba(255,255,255,.05);
+  border: 1px solid rgba(255,255,255,.1); color: var(--warm); font-size: .68rem;
+  padding: 3px 5px; border-radius: 4px; font-variant-numeric: tabular-nums; }
+.seismo-pos::placeholder { opacity: .35; font-size: .6rem; }
+.seismo-pos:focus { outline: none; border-color: rgba(0,180,216,.5); background: rgba(0,180,216,.06); }
+.seismo-pos-label { font-size: .55rem; opacity: .35; width: 28px; text-align: right; flex-shrink: 0; }
 
 /* ── Controls ── */
 .controls { display: flex; gap: .5rem; padding: .6rem 1rem;
@@ -84,6 +90,29 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   color: var(--warm); border-radius: 6px; padding: .3rem .5rem; font-size: .75rem; }
 .rec-timer { font-family: 'SF Mono', monospace; font-size: .85rem; color: var(--red);
   min-width: 40px; text-align: center; display: none; }
+
+/* ── Wavespeed-resultat-panel ── */
+.ws-result { padding: .8rem 1.2rem; border-bottom: .5px solid rgba(255,255,255,.06);
+  display: flex; gap: 1.6rem; align-items: stretch; flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(0,180,216,.03), transparent); }
+.ws-result-main { display: flex; flex-direction: column; gap: .25rem; min-width: 180px; }
+.ws-result-label { font-size: .65rem; opacity: .55; text-transform: uppercase;
+  letter-spacing: .08em; }
+.ws-result-value { font-family: Georgia, serif; font-size: 2rem; font-weight: 600;
+  color: var(--cyan); line-height: 1; font-variant-numeric: tabular-nums; }
+.ws-result-unit { font-size: 1rem; opacity: .6; margin-left: .25rem; }
+.ws-result-meta { font-size: .7rem; opacity: .65; line-height: 1.5; }
+.ws-result-meta strong { color: var(--warm); }
+.ws-result-plot { flex: 1; min-width: 0; }
+.ws-result-plot canvas { width: 100%; height: 90px; display: block;
+  background: rgba(255,255,255,.02); border-radius: 6px; }
+.ws-result-warn { font-size: .7rem; color: var(--orange); opacity: .85; line-height: 1.5;
+  padding: .3rem .5rem; background: rgba(239,138,23,.06); border-radius: 6px;
+  border-left: 2px solid rgba(239,138,23,.5); }
+.ws-result-compare { font-size: .65rem; opacity: .5; line-height: 1.6; }
+.ws-result-compare span { color: var(--cyan); font-weight: 500; }
+.ws-result-export { display: flex; gap: .4rem; align-items: center; }
+.ws-result-export .btn { padding: .35rem .8rem; font-size: .72rem; }
 
 /* ── Review screen ── */
 .review { flex-direction: column; }
@@ -457,6 +486,29 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <button class="btn btn-outline" id="btn-back" style="padding:.35rem .9rem;font-size:.75rem">← Tilbage</button>
   </div>
 
+  <!-- Bølgehastigheds-resultat (vises kun hvis ≥2 stationer har position + trigger) -->
+  <div class="ws-result" id="ws-result" style="display:none">
+    <div class="ws-result-main">
+      <div class="ws-result-label">Bølgehastighed</div>
+      <div><span class="ws-result-value" id="ws-v">—</span><span class="ws-result-unit">m/s</span></div>
+      <div class="ws-result-meta" id="ws-meta">—</div>
+      <div class="ws-result-export">
+        <button class="btn btn-cyan" id="ws-btn-png">⬇ PNG</button>
+        <button class="btn btn-outline" id="ws-btn-csv">⬇ CSV</button>
+      </div>
+    </div>
+    <div class="ws-result-plot">
+      <div class="ws-result-label">Position vs. ankomsttid</div>
+      <canvas id="ws-plot"></canvas>
+      <div class="ws-result-compare" id="ws-compare">
+        Sammenligning: <span>lyd i luft 340 m/s</span> · <span>vand 1480 m/s</span> · <span>bord/træ ~3500 m/s</span> · <span>stål ~5000 m/s</span>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:.4rem;max-width:240px">
+      <div class="ws-result-warn" id="ws-warn" style="display:none">—</div>
+    </div>
+  </div>
+
   <div class="review-body" id="rv-body">
     <!-- tracks injectes her -->
   </div>
@@ -490,9 +542,12 @@ let sessionState = 'lobby';
 const stations = new Map();
 const seismoData = new Map();       // live: stationId → { samples[], canvas, ctx }
 const recordingBuffer = new Map();  // review: stationId → [{t, z}]
+const stationPositions = new Map(); // wavespeed: stationId → cm
+const stationTriggers = new Map();  // wavespeed: stationId → første trigger-tid (ms, abs)
 let triggerCount = 0;
 let globalPeak = 0;
 let recStartTime = 0;
+let recStartAbsMs = 0;              // Date.now() ved recording:start, ankomsttider måles relativt til denne
 let recAutoStopTimer = null;
 let recTimerIv = null;
 
@@ -637,6 +692,10 @@ function handleMsg(msg) {
       document.getElementById('d-triggers').textContent = triggerCount;
       const row = document.querySelector(`[data-station="${msg.id}"]`);
       if (row) { row.style.background = 'rgba(230,57,70,.08)'; setTimeout(() => row.style.background = '', 500); }
+      // Gem FØRSTE trigger pr. station efter recording-start (til bølgehastighed)
+      if (sessionState === 'recording' && msg.t && !stationTriggers.has(msg.id)) {
+        stationTriggers.set(msg.id, msg.t);
+      }
       break;
     case 'countdown':   setDashState('countdown'); break;
     case 'recording:start': onRecordingStart(); break;
@@ -648,6 +707,7 @@ function handleMsg(msg) {
       document.getElementById('d-peak').textContent = '—';
       seismoData.forEach(sd => sd.samples = []);
       recordingBuffer.clear();
+      stationTriggers.clear();
       break;
   }
 }
@@ -688,10 +748,32 @@ function ensureSeismoRow(id, name) {
   row.className = 'seismo-row'; row.dataset.station = id;
   const label = document.createElement('div');
   label.className = 'seismo-label'; label.textContent = name;
+
+  // Position-input (Mode B / wavespeed): afstand fra reference i cm
+  const posLabel = document.createElement('div');
+  posLabel.className = 'seismo-pos-label'; posLabel.textContent = 'pos:';
+  const posInput = document.createElement('input');
+  posInput.className = 'seismo-pos';
+  posInput.type = 'number';
+  posInput.step = 'any';
+  posInput.placeholder = 'cm';
+  posInput.title = 'Afstand fra reference (cm) — bruges til bølgehastighed';
+  posInput.addEventListener('input', () => {
+    const v = parseFloat(posInput.value);
+    if (isFinite(v)) stationPositions.set(id, v);
+    else stationPositions.delete(id);
+  });
+  // Pre-fill hvis stationen tidligere havde position
+  if (stationPositions.has(id)) posInput.value = stationPositions.get(id);
+
   const canvas = document.createElement('canvas');
   canvas.className = 'seismo-canvas';
   canvas.height = 28 * (window.devicePixelRatio || 1);
-  row.appendChild(label); row.appendChild(canvas); list.appendChild(row);
+  row.appendChild(label);
+  row.appendChild(posLabel);
+  row.appendChild(posInput);
+  row.appendChild(canvas);
+  list.appendChild(row);
   seismoData.set(id, { samples: [], canvas, ctx: canvas.getContext('2d'), peak: 0 });
 }
 
@@ -751,6 +833,8 @@ setInterval(() => {
 function onRecordingStart() {
   setDashState('recording');
   recStartTime = Date.now();
+  recStartAbsMs = Date.now();
+  stationTriggers.clear();
   recordingBuffer.forEach((v, k) => recordingBuffer.set(k, [])); // nulstil buffer
 
   // Auto-stop timer
@@ -823,6 +907,7 @@ function openReview() {
   document.getElementById('scr-review').classList.add('active');
 
   setupReviewInteraction();
+  wsUpdateResult();
   requestAnimationFrame(drawReview);
 }
 
@@ -898,6 +983,25 @@ function drawReview() {
     ctx.font = '9px sans-serif';
     ctx.textAlign = 'left';
     ctx.fillText(`±${scale.toFixed(3)} m/s²`, 4, 12);
+
+    // Trigger-markør (Mode B): lodret streg hvor STA/LTA detekterede signalet
+    const stationId = [...rvCanvases.entries()].find(([id, c]) => c.canvas === canvas)?.[0];
+    if (stationId != null && stationTriggers.has(stationId)) {
+      const triggerT = stationTriggers.get(stationId);
+      const relT = triggerT - minT;
+      if (relT >= rvViewStart && relT <= rvViewEnd) {
+        const x = ((relT - rvViewStart) / dur) * w;
+        ctx.strokeStyle = 'rgba(239,138,23,.9)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(239,138,23,.9)';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('trigger', x + 4, h - 4);
+      }
+    }
   });
 
   drawAxis();
@@ -1055,11 +1159,314 @@ document.getElementById('btn-back').addEventListener('click', () => {
   document.getElementById('scr-dash').classList.add('active');
 });
 
+// Hjælper: ankomsttid i ms relativt til recording-start, vist i lobby ved næste session
+function wsResetForNewMeasurement() {
+  stationTriggers.clear();
+  // Behold stationPositions så lærer ikke skal indtaste afstande igen
+}
+
+// ═══════════════════════════════════════════════════════════
+// WAVESPEED (Mode B) — bølgehastigheds-beregning
+// ═══════════════════════════════════════════════════════════
+function wsComputeResult() {
+  // Saml stationer der har BÅDE position OG trigger
+  const points = [];
+  stationTriggers.forEach((tAbs, id) => {
+    const pos = stationPositions.get(id);
+    if (pos == null || !isFinite(pos)) return;
+    const tRel = (tAbs - recStartAbsMs) / 1000; // sek siden recording-start
+    points.push({ id, name: stations.get(id)?.name || ('S' + id), pos_cm: pos, t_s: tRel, t_ms: tAbs - recStartAbsMs });
+  });
+  if (points.length < 2) return null;
+  points.sort((a, b) => a.pos_cm - b.pos_cm);
+
+  // Linear regression: t = (1/v)·d + t₀
+  // Vi regresserer på (d i meter, t i sek), så hældningen = 1/v (s/m), og v = 1/hældning
+  const n = points.length;
+  const xs = points.map(p => p.pos_cm / 100); // meter
+  const ys = points.map(p => p.t_s);
+  const sumX = xs.reduce((a, b) => a + b, 0);
+  const sumY = ys.reduce((a, b) => a + b, 0);
+  const meanX = sumX / n;
+  const meanY = sumY / n;
+  const ssXY = xs.reduce((s, x, i) => s + (x - meanX) * (ys[i] - meanY), 0);
+  const ssXX = xs.reduce((s, x) => s + (x - meanX) ** 2, 0);
+  if (ssXX < 1e-12) return null;
+  const slope = ssXY / ssXX;        // s/m
+  const intercept = meanY - slope * meanX;
+
+  // R²
+  const ssTot = ys.reduce((s, y) => s + (y - meanY) ** 2, 0);
+  const ssRes = ys.reduce((s, y, i) => s + (y - (slope * xs[i] + intercept)) ** 2, 0);
+  const r2 = ssTot < 1e-12 ? 1 : 1 - ssRes / ssTot;
+
+  // v = 1/slope (m/s). Hvis slope < 0, så er bølgen kommet "den anden vej" — vi tager abs
+  const v = Math.abs(slope) > 1e-12 ? 1 / Math.abs(slope) : Infinity;
+
+  // Usikkerheds-estimat: standard error på slope
+  const stdRes = Math.sqrt(ssRes / Math.max(1, n - 2));
+  const seSlope = ssXX > 1e-12 ? stdRes / Math.sqrt(ssXX) : 0;
+  const vRel = Math.abs(slope) > 1e-12 ? seSlope / Math.abs(slope) : 0;  // relativ usikkerhed på v
+  const dv = v * vRel;
+
+  // Tidssync-baseret minimum usikkerhed (~10 ms typisk)
+  const TYP_SYNC_MS = 10;
+  const dx_m = (points[points.length - 1].pos_cm - points[0].pos_cm) / 100;
+  const vUncertaintyFromSync = dx_m > 0 ? (v * v * (TYP_SYNC_MS / 1000)) / dx_m : Infinity;
+
+  return {
+    v, slope, intercept, r2, points, n,
+    dv, vRel,
+    vSyncUncertainty: vUncertaintyFromSync,
+    dx_m, dx_cm: dx_m * 100
+  };
+}
+
+function wsClassifyMedium(v) {
+  if (!isFinite(v) || v <= 0) return '—';
+  if (v < 100)  return 'meget langsom bølge (snor, vand-overflade?)';
+  if (v < 500)  return 'tæt på lyd i luft (340 m/s)';
+  if (v < 1800) return 'mellem luft og fast stof';
+  if (v < 3000) return 'fast stof — løs trækrop, plast';
+  if (v < 4500) return 'fast stof — træ, beton';
+  if (v < 6000) return 'fast stof — stål, granit';
+  return 'meget hurtig (måletfejl?)';
+}
+
+function wsFormatVelocity(v) {
+  if (!isFinite(v) || v <= 0) return '—';
+  if (v >= 1000) return (v / 1000).toFixed(2) + ' km/s';
+  return Math.round(v) + ' m/s';
+}
+
+function wsUpdateResult() {
+  const result = wsComputeResult();
+  const panel = document.getElementById('ws-result');
+  if (!result) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+
+  // Hovedtal
+  document.getElementById('ws-v').textContent = wsFormatVelocity(result.v);
+
+  // Meta
+  const r2pct = (result.r2 * 100).toFixed(1);
+  let metaHtml = '<strong>' + result.n + ' stationer</strong> · spand: ' + result.dx_cm.toFixed(0) + ' cm';
+  if (result.n >= 3) {
+    metaHtml += ' · R² = ' + r2pct + '%';
+  }
+  if (isFinite(result.dv) && result.dv > 0) {
+    metaHtml += '<br>Statistisk usikkerhed: ±' + wsFormatVelocity(result.dv);
+  }
+  metaHtml += '<br><span style="color:var(--cyan)">' + wsClassifyMedium(result.v) + '</span>';
+  document.getElementById('ws-meta').innerHTML = metaHtml;
+
+  // Tidssync-advarsel
+  const warn = document.getElementById('ws-warn');
+  if (isFinite(result.vSyncUncertainty) && result.vSyncUncertainty > result.v * 0.3) {
+    warn.style.display = '';
+    warn.innerHTML = '⚠ Tidssync-præcision (~10 ms) giver ekstra usikkerhed på ±' +
+      wsFormatVelocity(result.vSyncUncertainty) + '. For mere pålidelig måling: brug større afstande eller langsommere medium.';
+  } else {
+    warn.style.display = 'none';
+  }
+
+  wsDrawPlot(result);
+}
+
+function wsDrawPlot(result) {
+  const canvas = document.getElementById('ws-plot');
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const pad = { l: 32, r: 12, t: 8, b: 18 };
+  const plotW = w - pad.l - pad.r;
+  const plotH = h - pad.t - pad.b;
+
+  const pts = result.points;
+  const minX = pts[0].pos_cm, maxX = pts[pts.length - 1].pos_cm;
+  const ys = pts.map(p => p.t_ms);
+  let minY = Math.min(...ys, 0), maxY = Math.max(...ys);
+  if (maxY - minY < 1) maxY = minY + 1;
+  const padY = (maxY - minY) * 0.15;
+  minY -= padY; maxY += padY;
+
+  const xToPx = (x) => pad.l + ((x - minX) / Math.max(1e-9, maxX - minX)) * plotW;
+  const yToPx = (y) => pad.t + plotH - ((y - minY) / Math.max(1e-9, maxY - minY)) * plotH;
+
+  // Akser
+  ctx.strokeStyle = 'rgba(255,255,255,.15)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t + plotH); ctx.lineTo(pad.l + plotW, pad.t + plotH);
+  ctx.stroke();
+
+  // Regressionslinje
+  ctx.strokeStyle = 'rgba(0,180,216,.6)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(xToPx(minX), yToPx((result.slope * (minX / 100) + result.intercept) * 1000));
+  ctx.lineTo(xToPx(maxX), yToPx((result.slope * (maxX / 100) + result.intercept) * 1000));
+  ctx.stroke();
+
+  // Punkter
+  ctx.fillStyle = '#ef8a17';
+  for (const p of pts) {
+    const x = xToPx(p.pos_cm), y = yToPx(p.t_ms);
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Station-label
+    ctx.fillStyle = 'rgba(245,240,232,.55)';
+    ctx.font = '9px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(p.name, x + 6, y - 4);
+    ctx.fillStyle = '#ef8a17';
+  }
+
+  // Aksetekster
+  ctx.fillStyle = 'rgba(245,240,232,.4)';
+  ctx.font = '9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('position (cm)', pad.l + plotW / 2, h - 4);
+  ctx.save();
+  ctx.translate(8, pad.t + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('ankomst (ms)', 0, 0);
+  ctx.restore();
+  // Min/max-labels
+  ctx.textAlign = 'right';
+  ctx.fillText(minY.toFixed(0), pad.l - 3, pad.t + plotH + 3);
+  ctx.fillText(maxY.toFixed(0), pad.l - 3, pad.t + 8);
+  ctx.textAlign = 'center';
+  ctx.fillText(minX.toFixed(0), pad.l, pad.t + plotH + 12);
+  ctx.fillText(maxX.toFixed(0), pad.l + plotW, pad.t + plotH + 12);
+}
+
+// Eksport
+function wsExportTimestamp() {
+  return new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+}
+
+function wsDownloadPNG() {
+  const result = wsComputeResult();
+  if (!result) { alert('Brug for mindst 2 stationer med både position og trigger.'); return; }
+  const w = 1600, h = 900;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = '#0a0f3c'; ctx.fillRect(0, 0, w, h);
+  // Header
+  ctx.fillStyle = '#f5f0e8';
+  ctx.font = 'bold 28px Georgia, serif'; ctx.textAlign = 'left';
+  ctx.fillText('Mål bølgehastigheden', 40, 55);
+  ctx.font = '14px sans-serif'; ctx.fillStyle = 'rgba(245,240,232,.55)';
+  ctx.fillText('sans·science · Kom til kernen · ' + new Date().toLocaleString('da-DK'), 40, 80);
+
+  // Hovedresultat
+  ctx.font = 'bold 56px Georgia, serif'; ctx.fillStyle = '#00b4d8'; ctx.textAlign = 'right';
+  ctx.fillText(wsFormatVelocity(result.v), w - 40, 70);
+  ctx.font = '16px sans-serif'; ctx.fillStyle = 'rgba(245,240,232,.6)';
+  ctx.fillText(wsClassifyMedium(result.v), w - 40, 95);
+
+  // Plot — større version
+  const plotX = 80, plotY = 140, plotW = w - 160, plotH = h - 280;
+  ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 1;
+  ctx.strokeRect(plotX, plotY, plotW, plotH);
+  const pts = result.points;
+  const minX = pts[0].pos_cm, maxX = pts[pts.length - 1].pos_cm;
+  let minY = Math.min(...pts.map(p => p.t_ms), 0);
+  let maxY = Math.max(...pts.map(p => p.t_ms));
+  const padY = (maxY - minY) * 0.15 || 1;
+  minY -= padY; maxY += padY;
+  const xPx = (x) => plotX + ((x - minX) / Math.max(1e-9, maxX - minX)) * plotW;
+  const yPx = (y) => plotY + plotH - ((y - minY) / Math.max(1e-9, maxY - minY)) * plotH;
+
+  // Regressionslinje
+  ctx.strokeStyle = 'rgba(0,180,216,.7)'; ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(xPx(minX), yPx((result.slope * (minX / 100) + result.intercept) * 1000));
+  ctx.lineTo(xPx(maxX), yPx((result.slope * (maxX / 100) + result.intercept) * 1000));
+  ctx.stroke();
+
+  // Punkter med labels
+  ctx.fillStyle = '#ef8a17';
+  for (const p of pts) {
+    ctx.beginPath();
+    ctx.arc(xPx(p.pos_cm), yPx(p.t_ms), 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(245,240,232,.85)';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(p.name + ' (' + p.pos_cm + ' cm, ' + p.t_ms.toFixed(1) + ' ms)', xPx(p.pos_cm) + 14, yPx(p.t_ms) - 8);
+    ctx.fillStyle = '#ef8a17';
+  }
+
+  // Akse-labels
+  ctx.fillStyle = 'rgba(245,240,232,.6)'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('Position (cm)', plotX + plotW / 2, plotY + plotH + 35);
+  ctx.save();
+  ctx.translate(plotX - 50, plotY + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('Ankomsttid (ms)', 0, 0);
+  ctx.restore();
+
+  // Bundtekst
+  ctx.font = '14px sans-serif'; ctx.fillStyle = 'rgba(245,240,232,.6)'; ctx.textAlign = 'left';
+  let bot = h - 90;
+  ctx.fillText(result.n + ' stationer · spand: ' + result.dx_cm.toFixed(0) + ' cm' +
+               (result.n >= 3 ? ' · R² = ' + (result.r2 * 100).toFixed(1) + '%' : '') +
+               (isFinite(result.dv) ? ' · stat. usikkerhed: ±' + wsFormatVelocity(result.dv) : ''), 40, bot);
+  ctx.fillText('Sammenligning: lyd i luft 340 m/s · vand 1480 m/s · træ ~3500 m/s · stål ~5000 m/s', 40, bot + 22);
+
+  const link = document.createElement('a');
+  link.download = 'bolgehastighed-' + wsExportTimestamp() + '.png';
+  link.href = c.toDataURL('image/png');
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+}
+
+function wsDownloadCSV() {
+  const result = wsComputeResult();
+  if (!result) { alert('Brug for mindst 2 stationer med både position og trigger.'); return; }
+  const lines = [];
+  lines.push('# Seismograf — Mål bølgehastigheden');
+  lines.push('# Eksporteret: ' + new Date().toISOString());
+  lines.push('# Beregnet hastighed: ' + result.v.toFixed(2) + ' m/s (' + wsClassifyMedium(result.v) + ')');
+  lines.push('# Hældning: ' + result.slope.toExponential(4) + ' s/m');
+  lines.push('# R²: ' + result.r2.toFixed(4));
+  lines.push('# Stationer: ' + result.n);
+  if (isFinite(result.dv)) lines.push('# Statistisk usikkerhed på v: ±' + result.dv.toFixed(2) + ' m/s');
+  lines.push('');
+  lines.push('station,position_cm,ankomsttid_ms,absolut_t_ms');
+  for (const p of result.points) {
+    lines.push(p.name + ',' + p.pos_cm + ',' + p.t_ms.toFixed(2) + ',' + (recStartAbsMs + p.t_ms));
+  }
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.download = 'bolgehastighed-' + wsExportTimestamp() + '.csv';
+  link.href = url;
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 document.getElementById('rv-new').addEventListener('click', () => {
   apiControl('reset');
   document.getElementById('scr-review').classList.remove('active');
   document.getElementById('scr-dash').classList.add('active');
 });
+
+// Wavespeed eksport-handlers
+document.getElementById('ws-btn-png').addEventListener('click', wsDownloadPNG);
+document.getElementById('ws-btn-csv').addEventListener('click', wsDownloadCSV);
 
 // ═══════════════════════════════════════════════════════════
 // SILENT MODE — "Hvor stille kan du være?"
