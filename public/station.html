@@ -539,22 +539,16 @@ function startCalibration() {
     });
 
     setTimeout(() => {
-      showScreen('scr-ready');
-      document.getElementById('ready-name').textContent = stationName + ' klar';
-
-      // Mode-afhængig info-grid + besked
       if (sessionMode === 'silent') {
-        document.getElementById('station-info').innerHTML = `
-          <div class="info-row"><span class="lbl">Øvelse</span><span class="val cyan">Hvor stille kan du være?</span></div>
-          <div class="info-row"><span class="lbl">Station</span><span class="val">${stationName}</span></div>
-          <div class="info-row"><span class="lbl">Samplingrate</span><span class="val cyan">${sampleRate} Hz</span></div>
-          <div class="info-row"><span class="lbl">Støjniveau</span><span class="val">${noiseFloor.toFixed(3)} m/s²</span></div>
-        `;
-        document.getElementById('ready-peers-label').style.display = 'none';
-        document.getElementById('peers-list').style.display = 'none';
-        document.getElementById('ready-wait-msg').innerHTML =
-          'Læg telefonen <strong>fladt på bordet</strong>.<br>Stationen sender allerede — kig på tavlen.';
+        // Silent-mode: gå direkte til live-canvas så brugeren ser at sensoren virker
+        showScreen('scr-live');
+        const statusEl = document.getElementById('live-status');
+        statusEl.textContent = stationName + ' lytter — kig på tavlen';
+        statusEl.className = 'status info';
       } else {
+        // Wavespeed: vent på lærer i lobby
+        showScreen('scr-ready');
+        document.getElementById('ready-name').textContent = stationName + ' klar';
         document.getElementById('station-info').innerHTML = `
           <div class="info-row"><span class="lbl">Station</span><span class="val">${stationName}</span></div>
           <div class="info-row"><span class="lbl">Position</span><span class="val">${gpsLat?.toFixed(3)}°N, ${gpsLng?.toFixed(3)}°Ø</span></div>
@@ -598,8 +592,15 @@ document.getElementById('btn-disconnect').addEventListener('click', () => {
 let batchBuffer = [];
 let lastSendTime = 0;
 const SEND_INTERVAL = 50; // ms (20 pakker/sek)
+const WARMUP_MS = 1000;   // første sek dropper data så filter-transient og auto-skala ikke domineres af tyngdekraft-startværdi
+let streamStartTime = 0;
+let firstSample = true;
 
 function startAccelerometerStream() {
+  streamStartTime = performance.now();
+  firstSample = true;
+  prevRaw = 0;
+  prevFiltered = 0;
   window.addEventListener('devicemotion', onLiveMotion);
 }
 
@@ -609,11 +610,23 @@ function onLiveMotion(e) {
 
   const rawZ = acc.z || 0;
 
+  // Pre-seed filter med faktisk rå-værdi så vi ikke får en kunstig peak fra (0 → 9.8)
+  if (firstSample) {
+    prevRaw = rawZ;
+    prevFiltered = 0;
+    firstSample = false;
+    return;
+  }
+
   // Mode-afhængigt high-pass-filter
   const alpha = sessionMode === 'silent' ? ALPHA_SILENT : ALPHA_WAVESPEED;
   const hpFiltered = alpha * (prevFiltered + rawZ - prevRaw);
   prevRaw = rawZ;
   prevFiltered = hpFiltered;
+
+  // Warmup: opdater filter-state men send/lagre ikke (lader filter konvergere)
+  const elapsed = performance.now() - streamStartTime;
+  if (elapsed < WARMUP_MS) return;
 
   const absVal = Math.abs(hpFiltered);
 

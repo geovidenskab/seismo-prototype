@@ -200,6 +200,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .silent-controls .live-indicator.paused::before { background: var(--orange); animation: none; }
 @keyframes pulseDot { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
 
+.silent-zoom-group { display: inline-flex; align-items: center; gap: .35rem;
+  padding: 0 .3rem; border-left: 1px solid rgba(255,255,255,.08);
+  border-right: 1px solid rgba(255,255,255,.08); margin: 0 .2rem; }
+.silent-zoom-btn { padding: .4rem .7rem !important; font-size: .85rem !important;
+  min-width: 36px; }
+.silent-zoom-mode { font-size: .65rem; opacity: .45; min-width: 32px; text-align: center;
+  text-transform: uppercase; letter-spacing: .06em; }
+.silent-zoom-mode.manual { color: var(--orange); opacity: .9; }
+
 .silent-timeline-wrap { padding: .5rem 1.2rem .8rem; flex-shrink: 0;
   border-top: .5px solid rgba(255,255,255,.06); }
 .silent-timeline { width: 100%; height: 40px; cursor: pointer; display: block;
@@ -329,6 +338,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <button class="btn btn-red" id="s-btn-pause" style="display:none">⏸ Pause</button>
     <button class="btn btn-cyan" id="s-btn-live" style="display:none">⏎ Tilbage til live</button>
     <span class="live-indicator" id="s-indicator">Live</span>
+    <span class="silent-zoom-group">
+      <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-out" title="Zoom ud (mindre følsom)">−</button>
+      <span class="silent-zoom-mode" id="s-zoom-mode">auto</span>
+      <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-in" title="Zoom ind (mere følsom)">+</button>
+      <button class="btn btn-outline silent-zoom-btn" id="s-btn-zoom-auto" title="Tilbage til auto-skala">⟲</button>
+    </span>
     <button class="btn btn-outline" id="s-btn-exit">← Forlad øvelse</button>
   </div>
 
@@ -399,8 +414,12 @@ let silentFollowLive = true;          // true = main-canvas følger seneste
 let silentViewMs = SILENT_DEFAULT_VIEW_MS; // bredde på view-vindue i ms
 let silentViewEndMs = 0;              // tid (ms-since-epoch) for højre kant af view; 0 = nu
 let silentAmpScale = 0.1;             // EMA-smoothed auto-skala
+let silentManualScale = null;         // != null overstyrer auto
 let silentStationName = null;
 let silentLastQrUrl = '';
+const SILENT_RECENT_WINDOW_MS = 3000; // auto-skala fokuserer på sidste 3 sek i live
+const SILENT_EMA_FAST = 0.30;         // når skalaen skal UP (snap hurtigt)
+const SILENT_EMA_SLOW = 0.10;         // når skalaen skal NED (afspænd langsommere så øjet kan følge)
 
 // ── Review state ──
 let rvViewStart = 0;   // ms relative to recStartTime
@@ -979,6 +998,21 @@ function initSilentMode() {
     apiControl('silent:start');
     silentUpdateButtons();
   });
+  // Manuel zoom: + zoomer ind (mere følsom — mindre skala-værdi),
+  //              − zoomer ud (mindre følsom — større skala-værdi),
+  //              ⟲ tilbage til auto
+  document.getElementById('s-btn-zoom-in').addEventListener('click', () => {
+    if (silentManualScale == null) silentManualScale = silentAmpScale;
+    silentManualScale = Math.max(0.005, silentManualScale * 0.7);
+  });
+  document.getElementById('s-btn-zoom-out').addEventListener('click', () => {
+    if (silentManualScale == null) silentManualScale = silentAmpScale;
+    silentManualScale = Math.min(50, silentManualScale * 1.4);
+  });
+  document.getElementById('s-btn-zoom-auto').addEventListener('click', () => {
+    silentManualScale = null;
+  });
+
   document.getElementById('s-btn-exit').addEventListener('click', () => {
     if (!confirm('Forlad øvelsen og luk session?')) return;
     if (ws) { try { ws.onclose = null; ws.close(); } catch(e) {} }
@@ -1087,6 +1121,17 @@ function silentUpdateButtons() {
   }
 }
 
+function silentUpdateZoomLabel() {
+  const lbl = document.getElementById('s-zoom-mode');
+  if (silentManualScale == null) {
+    lbl.textContent = 'auto';
+    lbl.className = 'silent-zoom-mode';
+  } else {
+    lbl.textContent = 'man';
+    lbl.className = 'silent-zoom-mode manual';
+  }
+}
+
 function silentDrawLoop() {
   if (!document.getElementById('scr-silent').classList.contains('active')) {
     requestAnimationFrame(silentDrawLoop);
@@ -1094,6 +1139,7 @@ function silentDrawLoop() {
   }
   silentDrawMain();
   silentDrawTimeline();
+  silentUpdateZoomLabel();
   requestAnimationFrame(silentDrawLoop);
 }
 
@@ -1135,14 +1181,23 @@ function silentDrawMain() {
 
   if (visible.length < 2) return;
 
-  // Auto-skala med EMA (smooth)
-  let maxAbs = 0;
-  for (const s of visible) {
-    const a = Math.abs(s.z);
-    if (a > maxAbs) maxAbs = a;
+  // Auto-skala (overstyres af manuel zoom hvis sat)
+  if (silentManualScale != null) {
+    silentAmpScale = silentManualScale;
+  } else {
+    // I live-mode: fokusér på "lige nu" (sidste 3 sek). I scrollback: hele view-vinduet.
+    const focusStart = silentFollowLive ? Math.max(viewStart, lastT - SILENT_RECENT_WINDOW_MS) : viewStart;
+    let maxAbs = 0;
+    for (const s of visible) {
+      if (s.t < focusStart) continue;
+      const a = Math.abs(s.z);
+      if (a > maxAbs) maxAbs = a;
+    }
+    const targetScale = Math.max(maxAbs * 1.25, 0.02);
+    // Asymmetrisk EMA: hurtigt op (fang transient), langsomt ned (rolig genopretning)
+    const ema = targetScale > silentAmpScale ? SILENT_EMA_FAST : SILENT_EMA_SLOW;
+    silentAmpScale = silentAmpScale + (targetScale - silentAmpScale) * ema;
   }
-  const targetScale = Math.max(maxAbs * 1.2, 0.02);
-  silentAmpScale = silentAmpScale + (targetScale - silentAmpScale) * 0.15;
 
   const mid = h / 2;
 
