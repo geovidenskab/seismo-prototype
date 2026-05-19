@@ -2404,37 +2404,60 @@ function vibGetNoiseBuffer() {
   return vibNoiseBuffer;
 }
 
-// Kort filtreret støj-burst — "knald" når peak detekteres.
-// Mapping: kraftig rystelse → dybere + højere volume (som store jordskælv har
-// lavere frekvensindhold). normalizedAmp ∈ [0, 1].
+// To-lags knald: skarp transient (mid-range hvor øret er følsomt) +
+// resonans-tone (følger amplitude i frekvens, giver "tyngde" ved kraftige slag).
+// Det menneskelige øre er mindst følsomt ved meget lave frekvenser
+// (equal-loudness curves), så transienten sikrer at vi hører knald
+// karakteristisk uanset hvor "dybt" resonansen ligger.
 function vibPlayKnald(normalizedAmp) {
   if (!audioCtx || !vibActive) return;
   const now = audioCtx.currentTime;
-  const src = audioCtx.createBufferSource();
-  src.buffer = vibGetNoiseBuffer();
-  src.loop = true;
-  // Frekvens: 600 Hz (lille udsving) → 110 Hz (kraftigt udsving), ±30 Hz spread
-  const centerFreq = 600 - normalizedAmp * 490;
-  const freq = centerFreq + (Math.random() - 0.5) * 60;
-  // Q: bredere bandpass ved lavt udsving (mere "klap"), smallere ved kraftigt (mere "boom")
-  const Q = 1.8 + normalizedAmp * 3.5;
-  // Envelope: kraftigt udsving har længere henfald (efterklang)
-  const releaseSec = 0.10 + normalizedAmp * 0.18;   // 100 → 280 ms
-  const vol = Math.min(0.6, 0.15 + normalizedAmp * 0.5);
+  const noiseBuf = vibGetNoiseBuffer();
 
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.value = Math.max(80, freq);
-  filter.Q.value = Q;
-  const gain = audioCtx.createGain();
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(vol, now + 0.005);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + releaseSec);
-  src.connect(filter);
-  filter.connect(gain);
-  gain.connect(audioCtx.destination);
-  src.start(now);
-  src.stop(now + releaseSec + 0.02);
+  // ─── LAG 1: Skarp transient ("klick") i mid-range ───
+  // Øret er mest følsomt mellem 1-4 kHz. Denne lag giver knald-karakter.
+  const src1 = audioCtx.createBufferSource();
+  src1.buffer = noiseBuf;
+  src1.loop = false;
+  const filter1 = audioCtx.createBiquadFilter();
+  filter1.type = 'bandpass';
+  filter1.frequency.value = 1200 + Math.random() * 900;  // 1200-2100 Hz
+  filter1.Q.value = 0.6;  // bredt, så det er "knald" ikke tone
+  const gain1 = audioCtx.createGain();
+  const transVol = 0.20 + normalizedAmp * 0.55;          // skalerer med amp
+  gain1.gain.setValueAtTime(0, now);
+  gain1.gain.linearRampToValueAtTime(transVol, now + 0.001);   // 1ms attack
+  gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.025);  // 25ms decay
+  src1.connect(filter1);
+  filter1.connect(gain1);
+  gain1.connect(audioCtx.destination);
+  src1.start(now);
+  src1.stop(now + 0.04);
+
+  // ─── LAG 2: Resonans-tone (følger amplitude i pitch + længde) ───
+  // Giver "tyngde"/dybde-fornemmelse ved kraftige slag.
+  const src2 = audioCtx.createBufferSource();
+  src2.buffer = noiseBuf;
+  src2.loop = true;
+  // Frekvens: 400 Hz (let) → 150 Hz (kraftigt) — IKKE for dybt
+  const centerFreq = 400 - normalizedAmp * 250;
+  const freq = centerFreq + (Math.random() - 0.5) * 40;
+  const Q = 1.5 + normalizedAmp * 2.0;
+  const releaseSec = 0.10 + normalizedAmp * 0.18;
+  const resVol = 0.20 + normalizedAmp * 0.55;
+  const filter2 = audioCtx.createBiquadFilter();
+  filter2.type = 'bandpass';
+  filter2.frequency.value = Math.max(100, freq);
+  filter2.Q.value = Q;
+  const gain2 = audioCtx.createGain();
+  gain2.gain.setValueAtTime(0, now);
+  gain2.gain.linearRampToValueAtTime(resVol, now + 0.003);  // 3ms attack — efter transient
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + releaseSec);
+  src2.connect(filter2);
+  filter2.connect(gain2);
+  gain2.connect(audioCtx.destination);
+  src2.start(now + 0.001);  // næsten samtidig — transient starter først for skarp knald
+  src2.stop(now + releaseSec + 0.02);
 }
 
 function silentToggleVibration() {
