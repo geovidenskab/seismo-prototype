@@ -7,7 +7,7 @@
 
 <!-- PWA: installerbar som home-screen-app -->
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0a0f3c">
+<meta name="theme-color" content="#faf6ee">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,8 +15,20 @@
 <meta name="apple-mobile-web-app-title" content="Seismograf">
 <meta name="mobile-web-app-capable" content="yes">
 <style>
-:root { --navy: #0a0f3c; --warm: #f5f0e8; --sand: #e8dfd0; --cyan: #00b4d8;
-  --red: #e63946; --green: #2a9d8f; --orange: #ef8a17; }
+:root {
+  /* Lyst varmt tema. Variabel-navne beholdes; værdier er flippet. */
+  --navy: #faf6ee;      /* HOVED-BAGGRUND (var #0a0f3c) — varm cream */
+  --warm: #1a1f3c;      /* HOVED-TEKST (var #f5f0e8) — dyb navy */
+  --sand: #f0e8d8;
+  --ink-soft: #5a5345;
+  --border: rgba(26, 31, 60, .12);
+  --canvas-bg: #0f1424;
+  --cyan: #0b7f99;
+  --red: #c23b46;
+  --green: #1f7a72;
+  --orange: #d97511;
+  --amber: #c98b21;
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   background: var(--navy); color: var(--warm); min-height: 100dvh;
@@ -34,55 +46,55 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .btn { display: block; width: 100%; padding: .75rem; border: none; border-radius: 8px;
   font-size: .85rem; font-weight: 600; cursor: pointer; transition: transform .1s; }
 .btn:active { transform: scale(.97); }
-.btn-cyan { background: var(--cyan); color: var(--navy); }
-.btn-outline { background: transparent; border: 1px solid rgba(255,255,255,.12);
-  color: rgba(245,240,232,.5); }
-.btn-red { background: var(--red); color: var(--warm); }
+.btn-cyan { background: var(--cyan); color: #faf6ee; }
+.btn-outline { background: transparent; border: 1px solid var(--border);
+  color: rgba(26,31,60,.6); }
+.btn-red { background: var(--red); color: #faf6ee; }
 .btn + .btn { margin-top: .5rem; }
 .status { text-align: center; font-size: .75rem; padding: .4rem .8rem; border-radius: 6px;
   margin-bottom: .8rem; }
-.status.ok { background: rgba(42,157,143,.12); color: var(--green); }
-.status.warn { background: rgba(239,138,23,.12); color: var(--orange); }
-.status.err { background: rgba(230,57,70,.12); color: var(--red); }
-.status.info { background: rgba(0,180,216,.08); color: var(--cyan); }
+.status.ok { background: rgba(31,122,114,.12); color: var(--green); }
+.status.warn { background: rgba(217,117,17,.12); color: var(--orange); }
+.status.err { background: rgba(194,59,70,.12); color: var(--red); }
+.status.info { background: rgba(11,127,153,.08); color: var(--cyan); }
 
 /* ── Join screen ── */
 .code-row { display: flex; gap: 8px; justify-content: center; margin: 1.2rem 0; }
-.code-digit { width: 48px; height: 56px; background: rgba(255,255,255,.04);
-  border: 1.5px solid rgba(255,255,255,.1); border-radius: 10px;
+.code-digit { width: 48px; height: 56px; background: rgba(26,31,60,.04);
+  border: 1.5px solid rgba(26,31,60,.1); border-radius: 10px;
   font-size: 1.6rem; font-weight: 600; color: var(--cyan); text-align: center;
   font-family: 'SF Mono', 'Fira Code', monospace; outline: none; caret-color: var(--cyan); }
-.code-digit:focus { border-color: rgba(0,180,216,.5); background: rgba(0,180,216,.04); }
-.code-digit.filled { border-color: rgba(0,180,216,.3); }
+.code-digit:focus { border-color: rgba(11,127,153,.5); background: rgba(11,127,153,.04); }
+.code-digit.filled { border-color: rgba(11,127,153,.3); }
 .or-divider { display: flex; align-items: center; gap: .5rem; margin: .6rem 0; }
-.or-divider hr { flex: 1; border: none; border-top: .5px solid rgba(255,255,255,.06); }
+.or-divider hr { flex: 1; border: none; border-top: .5px solid rgba(26,31,60,.06); }
 .or-divider span { font-size: .65rem; opacity: .2; }
 .hint { text-align: center; font-size: .7rem; opacity: .3; }
 
 /* ── Permission screen ── */
 .perm-card { display: flex; align-items: center; gap: .7rem; padding: .7rem;
-  background: rgba(255,255,255,.03); border-radius: 8px; margin-bottom: .5rem;
-  border: .5px solid rgba(255,255,255,.06); }
+  background: rgba(26,31,60,.03); border-radius: 8px; margin-bottom: .5rem;
+  border: .5px solid rgba(26,31,60,.06); }
 .perm-icon { width: 36px; height: 36px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  border: 1px solid rgba(255,255,255,.08); }
+  border: 1px solid rgba(26,31,60,.08); }
 .perm-icon svg { width: 22px; height: 22px; display: block; }
-.perm-icon-acc { background: rgba(0,180,216,.08); color: var(--cyan); }
-.perm-icon-gps { background: rgba(42,157,143,.08); color: var(--green); }
+.perm-icon-acc { background: rgba(11,127,153,.08); color: var(--cyan); }
+.perm-icon-gps { background: rgba(31,122,114,.08); color: var(--green); }
 .perm-badge { text-transform: uppercase; letter-spacing: .05em; }
 .perm-name { font-size: .8rem; font-weight: 500; }
 .perm-why { font-size: .65rem; opacity: .4; margin-top: 1px; }
 .perm-badge { font-size: .65rem; padding: 2px 8px; border-radius: 10px; font-weight: 500; margin-left: auto; flex-shrink: 0; }
-.perm-badge.wait { background: rgba(255,255,255,.05); color: rgba(245,240,232,.3); }
-.perm-badge.ok { background: rgba(42,157,143,.12); color: var(--green); }
-.perm-badge.fail { background: rgba(230,57,70,.12); color: var(--red); }
+.perm-badge.wait { background: rgba(26,31,60,.05); color: rgba(26,31,60,.45); }
+.perm-badge.ok { background: rgba(31,122,114,.12); color: var(--green); }
+.perm-badge.fail { background: rgba(194,59,70,.12); color: var(--red); }
 
 /* ── Calibration screen ── */
 .calib-ring { width: 100px; height: 100px; margin: 1.5rem auto; border-radius: 50%;
-  border: 2px solid rgba(0,180,216,.15); display: flex; align-items: center;
+  border: 2px solid rgba(11,127,153,.15); display: flex; align-items: center;
   justify-content: center; position: relative; }
 .calib-ring::after { content: ''; position: absolute; inset: 8px; border-radius: 50%;
-  border: 2px dashed rgba(0,180,216,.1); animation: spin 4s linear infinite; }
+  border: 2px dashed rgba(11,127,153,.1); animation: spin 4s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .calib-pct { font-size: 1.5rem; font-weight: 600; color: var(--cyan); }
 .calib-info { text-align: center; font-size: .7rem; opacity: .35; margin-top: .5rem; }
@@ -92,34 +104,34 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .ready-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
   background: var(--green); margin-right: 6px; vertical-align: middle;
   animation: pulse 2s ease-in-out infinite; }
-@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(42,157,143,.4); }
-  50% { box-shadow: 0 0 0 8px rgba(42,157,143,0); } }
-.info-grid { background: rgba(255,255,255,.03); border-radius: 8px; padding: .6rem .8rem;
-  margin: .8rem 0; border: .5px solid rgba(255,255,255,.06); }
+@keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(31,122,114,.4); }
+  50% { box-shadow: 0 0 0 8px rgba(31,122,114,0); } }
+.info-grid { background: rgba(26,31,60,.03); border-radius: 8px; padding: .6rem .8rem;
+  margin: .8rem 0; border: .5px solid rgba(26,31,60,.06); }
 .info-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: .7rem; }
 .info-row .lbl { opacity: .35; }
 .info-row .val { font-weight: 500; font-variant-numeric: tabular-nums; }
 .info-row .val.cyan { color: var(--cyan); }
 .peers { display: flex; flex-wrap: wrap; gap: 4px; margin: .5rem 0; }
-.peer { width: 24px; height: 24px; border-radius: 50%; background: rgba(0,180,216,.1);
-  border: 1px solid rgba(0,180,216,.2); display: flex; align-items: center;
-  justify-content: center; font-size: .55rem; color: rgba(0,180,216,.6); font-weight: 600; }
-.peer.me { background: rgba(0,180,216,.25); border-color: rgba(0,180,216,.4); color: var(--cyan); }
+.peer { width: 24px; height: 24px; border-radius: 50%; background: rgba(11,127,153,.1);
+  border: 1px solid rgba(11,127,153,.2); display: flex; align-items: center;
+  justify-content: center; font-size: .55rem; color: rgba(11,127,153,.6); font-weight: 600; }
+.peer.me { background: rgba(11,127,153,.25); border-color: rgba(11,127,153,.4); color: var(--cyan); }
 .wait-msg { text-align: center; font-size: .8rem; opacity: .5; margin: .8rem 0; line-height: 1.6; }
 
 /* ── Live screen ── */
 .readings { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .4rem; margin-bottom: .5rem; }
-.ax { background: rgba(255,255,255,.03); border-radius: 6px; padding: .4rem; text-align: center; }
+.ax { background: rgba(26,31,60,.03); border-radius: 6px; padding: .4rem; text-align: center; }
 .ax-label { font-size: .55rem; text-transform: uppercase; letter-spacing: .08em; opacity: .3; }
 .ax-val { font-size: 1.2rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .canvas-wrap { flex: 1; min-height: 0; position: relative; border-radius: 8px; overflow: hidden;
-  background: rgba(255,255,255,.02); }
+  background: var(--canvas-bg); }
 .canvas-wrap canvas { width: 100%; height: 100%; display: block; }
 .countdown-overlay { position: absolute; inset: 0; display: flex; align-items: center;
   justify-content: center; font-size: 4rem; font-weight: 700; color: var(--cyan);
   background: rgba(10,15,60,.7); z-index: 10; display: none; }
 .rec-badge { display: none; position: absolute; top: 8px; right: 8px; padding: 3px 10px;
-  background: rgba(230,57,70,.15); color: var(--red); border-radius: 10px;
+  background: rgba(194,59,70,.15); color: var(--red); border-radius: 10px;
   font-size: .6rem; font-weight: 600; z-index: 5; animation: recBlink 1s step-end infinite; }
 @keyframes recBlink { 50% { opacity: .3; } }
 
@@ -130,8 +142,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   border-radius: 10px; font-size: .6rem; font-weight: 600; z-index: 5;
   display: inline-flex; align-items: center; gap: .35rem;
   text-transform: uppercase; letter-spacing: .06em; }
-.wake-badge.active { background: rgba(42,157,143,.15); color: var(--green); }
-.wake-badge.warn   { background: rgba(239,138,23,.15); color: var(--orange); }
+.wake-badge.active { background: rgba(31,122,114,.15); color: var(--green); }
+.wake-badge.warn   { background: rgba(217,117,17,.15); color: var(--orange); }
 .wake-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor;
   display: inline-block; box-shadow: 0 0 0 0 currentColor;
   animation: wakeDotPulse 2s ease-in-out infinite; }

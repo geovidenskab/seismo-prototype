@@ -7,7 +7,7 @@
 
 <!-- PWA: installerbar -->
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#0a0f3c">
+<meta name="theme-color" content="#faf6ee">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,13 +16,22 @@
 <meta name="mobile-web-app-capable" content="yes">
 <style>
 :root {
-  --navy: #0a0f3c; --warm: #f5f0e8; --sand: #e8dfd0;
-  --cyan: #00b4d8; --red: #e63946; --green: #2a9d8f; --orange: #ef8a17;
+  /* Lyst varmt tema. Variabel-navne beholdes; værdier er flippet. */
+  --navy: #faf6ee;      /* HOVED-BAGGRUND (var #0a0f3c) — varm cream */
+  --warm: #1a1f3c;      /* HOVED-TEKST (var #f5f0e8) — dyb navy */
+  --sand: #f0e8d8;
+  --ink-soft: #5a5345;
+  --border: rgba(26, 31, 60, .12);
+  --cyan: #0b7f99;
+  --red: #c23b46;
+  --green: #1f7a72;
+  --orange: #d97511;
+  --amber: #c98b21;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-  background: radial-gradient(ellipse at top, #131d6b 0%, var(--navy) 60%);
+  background: radial-gradient(ellipse at top, #fefbf3 0%, var(--navy) 60%);
   color: var(--warm);
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
@@ -58,8 +67,8 @@ h1 em { color: var(--cyan); font-style: italic; }
 }
 .lehmann strong { color: var(--warm); font-weight: 500; }
 .story {
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.06);
+  background: rgba(26,31,60,.04);
+  border: 1px solid rgba(26,31,60,.06);
   border-radius: 14px;
   padding: 1.2rem 1.4rem;
   margin-bottom: 2rem;
@@ -84,15 +93,15 @@ a.link {
 }
 a.link:active { transform: scale(.97); }
 .link-dash {
-  background: var(--cyan); color: var(--navy);
+  background: var(--cyan); color: #faf6ee;
 }
-.link-dash:hover { background: #2bc4e3; }
+.link-dash:hover { background: #086778; }
 .link-station {
-  background: rgba(255,255,255,.05);
+  background: rgba(26,31,60,.05);
   color: var(--warm);
-  border: 1px solid rgba(255,255,255,.12);
+  border: 1px solid rgba(26,31,60,.12);
 }
-.link-station:hover { border-color: rgba(0,180,216,.4); background: rgba(0,180,216,.06); }
+.link-station:hover { border-color: rgba(11,127,153,.4); background: rgba(11,127,153,.06); }
 .footer {
   margin-top: 2.4rem;
   font-size: .7rem;
