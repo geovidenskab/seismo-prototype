@@ -782,6 +782,10 @@ let vibLastKnaldTime = 0;      // dead-time for at undgå at samme event giver f
 const VIB_KNALD_DEADTIME_MS = 80;
 const VIB_BASELINE_GAIN = 0.025;
 let vibPlaybackTimers = [];    // setTimeout-IDs for scheduled playback-knald
+let vibPlaybackStartMs = 0;    // performance.now() ved playback-start (0 = ikke aktiv)
+let vibPlaybackDurationMs = 0;
+let vibPlaybackViewStart = 0;  // tidsstempel for start af afspillet vindue (i ms)
+let vibPlaybackViewEnd = 0;
 
 // Markører — læreren klikker på seismogrammet for at markere et øjeblik
 const silentMarkers = []; // [{ t: ms, label: string }]
@@ -2352,29 +2356,37 @@ function vibGetNoiseBuffer() {
   return vibNoiseBuffer;
 }
 
-// Kort filtreret støj-burst — "knald" når peak detekteres
+// Kort filtreret støj-burst — "knald" når peak detekteres.
+// Mapping: kraftig rystelse → dybere + højere volume (som store jordskælv har
+// lavere frekvensindhold). normalizedAmp ∈ [0, 1].
 function vibPlayKnald(normalizedAmp) {
   if (!audioCtx || !vibActive) return;
   const now = audioCtx.currentTime;
   const src = audioCtx.createBufferSource();
   src.buffer = vibGetNoiseBuffer();
   src.loop = true;
-  // Bandpass for "klap/bank"-karakter — let varieret frekvens for organisk lyd
+  // Frekvens: 600 Hz (lille udsving) → 110 Hz (kraftigt udsving), ±30 Hz spread
+  const centerFreq = 600 - normalizedAmp * 490;
+  const freq = centerFreq + (Math.random() - 0.5) * 60;
+  // Q: bredere bandpass ved lavt udsving (mere "klap"), smallere ved kraftigt (mere "boom")
+  const Q = 1.8 + normalizedAmp * 3.5;
+  // Envelope: kraftigt udsving har længere henfald (efterklang)
+  const releaseSec = 0.10 + normalizedAmp * 0.18;   // 100 → 280 ms
+  const vol = Math.min(0.6, 0.15 + normalizedAmp * 0.5);
+
   const filter = audioCtx.createBiquadFilter();
   filter.type = 'bandpass';
-  filter.frequency.value = 220 + Math.random() * 380;
-  filter.Q.value = 2.5;
-  // Envelope: hurtig attack (5ms), eksponentielt henfald (~120ms)
+  filter.frequency.value = Math.max(80, freq);
+  filter.Q.value = Q;
   const gain = audioCtx.createGain();
-  const vol = Math.min(0.55, 0.15 + normalizedAmp * 0.45);
   gain.gain.setValueAtTime(0, now);
   gain.gain.linearRampToValueAtTime(vol, now + 0.005);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + releaseSec);
   src.connect(filter);
   filter.connect(gain);
   gain.connect(audioCtx.destination);
   src.start(now);
-  src.stop(now + 0.14);
+  src.stop(now + releaseSec + 0.02);
 }
 
 function silentToggleVibration() {
@@ -2415,6 +2427,7 @@ function silentStopVibration() {
   // Annullér evt. scheduled playback-knald
   vibPlaybackTimers.forEach(id => clearTimeout(id));
   vibPlaybackTimers = [];
+  vibPlaybackStartMs = 0;
   vibActive = false;
   const btn = document.getElementById('s-btn-vib');
   if (btn) btn.classList.remove('active');
@@ -2482,6 +2495,15 @@ function silentVibPlayView(playbackDurationMs) {
     const id = setTimeout(() => vibPlayKnald(norm), tInPlaybackMs);
     vibPlaybackTimers.push(id);
   }
+
+  // Start synkron visuel cursor — drawloop læser disse hver frame
+  vibPlaybackStartMs = performance.now();
+  vibPlaybackDurationMs = playbackDurationMs;
+  vibPlaybackViewStart = viewStart;
+  vibPlaybackViewEnd = viewEnd;
+  // Stop cursor efter playback (lille buffer)
+  const stopId = setTimeout(() => { vibPlaybackStartMs = 0; }, playbackDurationMs + 100);
+  vibPlaybackTimers.push(stopId);
 }
 
 // Send aktuelle indstillinger til stationen via dashboard-WS
@@ -2715,6 +2737,35 @@ function silentDrawMain() {
     ctx.fillRect(x - tw / 2 - 5, 6, tw + 10, 18);
     ctx.fillStyle = '#0a0f3c';
     ctx.fillText(m.label, x, 19);
+  }
+
+  // Synkron playback-cursor (amber linje + pegepind øverst)
+  if (vibPlaybackStartMs > 0) {
+    const elapsed = performance.now() - vibPlaybackStartMs;
+    if (elapsed <= vibPlaybackDurationMs + 50) {
+      const frac = Math.max(0, Math.min(1, elapsed / vibPlaybackDurationMs));
+      const cursorT = vibPlaybackViewStart + frac * (vibPlaybackViewEnd - vibPlaybackViewStart);
+      // Tegn kun hvis cursoren falder inden for det aktuelle view
+      if (cursorT >= viewStart && cursorT <= viewEnd) {
+        const cx = ((cursorT - viewStart) / silentViewMs) * w;
+        ctx.strokeStyle = 'rgba(201,139,33,.85)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, h);
+        ctx.stroke();
+        // Lille trekantet pegepind øverst
+        ctx.fillStyle = 'rgba(201,139,33,.95)';
+        ctx.beginPath();
+        ctx.moveTo(cx - 6, 0);
+        ctx.lineTo(cx + 6, 0);
+        ctx.lineTo(cx, 8);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else {
+      vibPlaybackStartMs = 0;  // playback slut — fjern cursor
+    }
   }
 
   // Labels
