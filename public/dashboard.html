@@ -793,7 +793,7 @@ let vibRumbleSrc = null;
 let vibRumbleGain = null;
 let vibRumbleFilter = null;
 const vibRmsBuffer = [];           // sliding window af recent |z| values
-const VIB_RMS_WINDOW = 20;         // ~1 sek ved 20 Hz
+const VIB_RMS_WINDOW = 10;         // ~0.5 sek ved 20 Hz — hurtigere respons
 const VIB_RUMBLE_ON = 1.5;         // start når RMS/noise > 1.5
 const VIB_RUMBLE_OFF = 1.15;       // fade ud når RMS/noise < 1.15 (hysterese)
 
@@ -2542,21 +2542,28 @@ function vibStopRumble() {
   if (vibRumbleFilter) { try { vibRumbleFilter.disconnect(); } catch(e) {} vibRumbleFilter = null; }
   vibRmsBuffer.length = 0;
 }
-// Påvirk rumble-gain/freq baseret på et ratio (rms/noiseFloor)
+// Påvirk rumble-gain/freq baseret på et ratio (rms/noiseFloor).
+// Logaritmisk mapping fordi øret hører i decibel-skala — det giver hørbar
+// forskel mellem let og kraftig rystelse (var linear, hvilket flade'de
+// dynamikken ud i den øverste halvdel af ranget).
 function vibSetRumbleFromRatio(ratio) {
   if (!vibActive || !audioCtx) return;
   if (!vibRumbleSrc && ratio > VIB_RUMBLE_ON) vibStartRumble();
-  if (vibRumbleGain && vibRumbleFilter) {
-    const now = audioCtx.currentTime;
-    let targetVol = 0;
-    if (ratio > VIB_RUMBLE_OFF) {
-      targetVol = Math.min(0.45, (ratio - VIB_RUMBLE_OFF) * 0.07);
-    }
-    // Frekvens: 220 Hz (svag rumble) → 65 Hz (kraftig) — dybere ved mere energi
-    const targetFreq = Math.max(65, 220 - Math.min(155, (ratio - 1) * 22));
-    vibRumbleGain.gain.linearRampToValueAtTime(targetVol, now + 0.15);
-    vibRumbleFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.15);
+  if (!vibRumbleGain || !vibRumbleFilter) return;
+
+  const now = audioCtx.currentTime;
+  let targetVol = 0;
+  let targetFreq = 250;
+  if (ratio > VIB_RUMBLE_OFF) {
+    // Logaritmisk volume: dobbelt ratio = +6 dB ≈ opfattet dobbelt så højt
+    const above = ratio / VIB_RUMBLE_OFF;  // ≥ 1
+    targetVol = Math.min(0.75, Math.log10(above) * 0.55);
+    // Frekvens: bredere range — 250 Hz (let) → 50 Hz (meget kraftig)
+    targetFreq = Math.max(50, 250 - Math.log10(above) * 130);
   }
+  // Hurtigere ramp så ændringer mærkes (var 150ms)
+  vibRumbleGain.gain.linearRampToValueAtTime(targetVol, now + 0.08);
+  vibRumbleFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.08);
 }
 
 // Live-mode: opdater RMS-buffer fra indkommende pakke + sæt rumble
