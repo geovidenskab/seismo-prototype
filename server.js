@@ -3,6 +3,7 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const QRCode = require('qrcode');
 const path = require('path');
+const { version: APP_VERSION } = require('./package.json');
 
 const app = express();
 const server = http.createServer(app);
@@ -57,14 +58,14 @@ const PUBLIC_BASE_URL = (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
 // ─── REST ───────────────────────────────────────────────
 app.get('/api/info', (req, res) => {
   if (PUBLIC_BASE_URL) {
-    return res.json({ host: PUBLIC_BASE_URL.replace(/^https?:\/\//, '') });
+    return res.json({ host: PUBLIC_BASE_URL.replace(/^https?:\/\//, ''), version: APP_VERSION });
   }
   const nets = require('os').networkInterfaces();
   let ip = req.headers.host || 'localhost';
   for (const iface of Object.values(nets))
     for (const c of iface)
       if (c.family === 'IPv4' && !c.internal) { ip = c.address + ':' + (process.env.PORT || 3000); break; }
-  res.json({ host: ip });
+  res.json({ host: ip, version: APP_VERSION });
 });
 
 app.post('/api/session', (req, res) => {
@@ -150,7 +151,7 @@ wss.on('connection', (ws, req) => {
   // ─── Dashboard ────────────────────────────────────
   if (role === 'dashboard') {
     session.dashboards.push(ws);
-    ws.send(JSON.stringify({ type: 'init', mode: session.mode, stations: stationList(session), recording: session.recording }));
+    ws.send(JSON.stringify({ type: 'init', mode: session.mode, version: APP_VERSION, stations: stationList(session), recording: session.recording }));
 
     ws.on('close', () => {
       session.dashboards = session.dashboards.filter(d => d !== ws);
@@ -193,7 +194,7 @@ wss.on('connection', (ws, req) => {
   ws._stationId = stationId;
   session.stations.set(stationId, ws);
 
-  ws.send(JSON.stringify({ type: 'welcome', stationId, name: 'S' + stationId, mode: session.mode, recording: session.recording }));
+  ws.send(JSON.stringify({ type: 'welcome', stationId, name: 'S' + stationId, mode: session.mode, version: APP_VERSION, recording: session.recording }));
   broadcastToRoom(code, {
     type: 'station:joined',
     id: stationId, name: 'S' + stationId, status: 'connecting',
