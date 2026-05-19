@@ -379,6 +379,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   0%, 100% { box-shadow: 0 0 0 0 rgba(201,139,33,.5); }
   50%      { box-shadow: 0 0 0 4px rgba(201,139,33,0); }
 }
+.silent-vib-play-btn { color: var(--amber) !important;
+  border-color: rgba(201,139,33,.3) !important; }
+.silent-vib-play-btn:hover { background: rgba(201,139,33,.08) !important; }
+.silent-audio-group { display: inline-flex; gap: .3rem; align-items: center;
+  padding: 0 .3rem; border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+  margin: 0 .2rem; }
 
 .silent-timeline-wrap { padding: .5rem 1.2rem .8rem; flex-shrink: 0;
   border-top: .5px solid rgba(26,31,60,.06); }
@@ -623,7 +629,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     </span>
     <span class="silent-audio-group">
       <button class="btn btn-outline silent-zoom-btn silent-sonify-btn" id="s-btn-sonify" title="Tone-mode: tonen følger amplituden (abstrakt, sjov)">lyt</button>
-      <button class="btn btn-outline silent-zoom-btn silent-sonify-btn" id="s-btn-vib" title="Vibration-mode: hør signalet direkte, pitch-shiftet op (fysisk korrekt)">vib</button>
+      <button class="btn btn-outline silent-zoom-btn silent-sonify-btn" id="s-btn-vib" title="Vibration-mode: svag susen + knald ved bank/stamp (fysisk)">vib</button>
+      <button class="btn btn-outline silent-zoom-btn silent-vib-play-btn" id="s-btn-vib-play" style="display:none" title="Afspil view-vinduet med susen + knald">▶</button>
     </span>
     <span class="silent-dl-group">
       <button class="btn btn-cyan silent-zoom-btn" id="s-btn-png" title="Download PNG-snapshot">PNG</button>
@@ -765,11 +772,16 @@ const SONIFY_MIN_FREQ = 150;
 const SONIFY_MAX_FREQ = 900;
 const SONIFY_MAX_GAIN = 0.18;
 
-// Vibration-mode: signalet selv pitch-shiftet op til hørbar zone (fysisk korrekt)
-let vibProc = null;
+// Vibration-mode: susen-baseline (hvid støj) + knald-burst ved peaks (fysisk korrekt)
+// Stille → svag susen. Bank → kort knæk. Som rigtige seismograf-audio.
 let vibActive = false;
-let vibCursor = 0;
-const VIB_PLAYBACK_RATE = 250;  // 250x speedup: 20 Hz source → 5 kHz tone-domæne
+let vibNoiseSrc = null;        // baseline lavpas-hvid-støj source
+let vibNoiseGain = null;
+let vibNoiseBuffer = null;     // pre-genereret hvid-støj buffer (genbruges)
+let vibLastKnaldTime = 0;      // dead-time for at undgå at samme event giver flere knald
+const VIB_KNALD_DEADTIME_MS = 80;
+const VIB_BASELINE_GAIN = 0.025;
+let vibPlaybackTimers = [];    // setTimeout-IDs for scheduled playback-knald
 
 // Markører — læreren klikker på seismogrammet for at markere et øjeblik
 const silentMarkers = []; // [{ t: ms, label: string }]
@@ -2029,6 +2041,10 @@ function initSilentMode() {
   // Sonifikation toggles
   document.getElementById('s-btn-sonify').addEventListener('click', silentToggleSonify);
   document.getElementById('s-btn-vib').addEventListener('click', silentToggleVibration);
+  // Playback-knap: afspil view-vinduet over 4 sek med susen + knald
+  document.getElementById('s-btn-vib-play').addEventListener('click', () => {
+    silentVibPlayView(4000);
+  });
 
   // Pan + zoom på hovedcanvas (når ikke i follow-live)
   silentCanvas.addEventListener('wheel', (e) => {
@@ -2131,8 +2147,9 @@ function silentPushData(msg) {
     ? silentPeakSmoothed + (peak - silentPeakSmoothed) * 0.5
     : silentPeakSmoothed + (peak - silentPeakSmoothed) * 0.05;
 
-  // Sonifikation: opdater tone hvis aktiv
-  silentUpdateSonify(peak);
+  // Sonifikation
+  silentUpdateSonify(peak);        // tone-mode (hvis aktiv)
+  silentVibLiveUpdate(peak);       // vib-mode live-knald (hvis aktiv + live)
 }
 
 // ── Klasse-magnitude: M = log₁₀(peak / noiseFloor) ──
@@ -2323,11 +2340,43 @@ function silentUpdateSonify(peak) {
   } catch(e) {}
 }
 
-// ── Vibration-mode: signalet selv som lyd, pitch-shiftet op ──
-// Mest fysisk korrekt — man HØRER faktisk signalets form (ikke en abstrakt mapping).
-// Speedup 250x betyder: hvor signalet har en udsving over fx 50 ms (klap-impuls),
-// høres det som en 0.2 ms 'knæk' i lyden, og den underliggende ~10 Hz rytme bliver
-// til en ~2.5 kHz tone-komponent.
+// ── Vibration-mode: susen-baseline + knald-burst ved peaks ──
+// Stille klasse → svag hvid-støj-susen. Bank/stamp → kort filtreret knæk
+// hvor amplituden følger udslagets størrelse. Fungerer både live og i playback.
+function vibGetNoiseBuffer() {
+  if (vibNoiseBuffer) return vibNoiseBuffer;
+  const sr = audioCtx.sampleRate;
+  vibNoiseBuffer = audioCtx.createBuffer(1, sr, sr);  // 1 sek hvid støj, loop'es
+  const d = vibNoiseBuffer.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  return vibNoiseBuffer;
+}
+
+// Kort filtreret støj-burst — "knald" når peak detekteres
+function vibPlayKnald(normalizedAmp) {
+  if (!audioCtx || !vibActive) return;
+  const now = audioCtx.currentTime;
+  const src = audioCtx.createBufferSource();
+  src.buffer = vibGetNoiseBuffer();
+  src.loop = true;
+  // Bandpass for "klap/bank"-karakter — let varieret frekvens for organisk lyd
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 220 + Math.random() * 380;
+  filter.Q.value = 2.5;
+  // Envelope: hurtig attack (5ms), eksponentielt henfald (~120ms)
+  const gain = audioCtx.createGain();
+  const vol = Math.min(0.55, 0.15 + normalizedAmp * 0.45);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(vol, now + 0.005);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+  src.connect(filter);
+  filter.connect(gain);
+  gain.connect(audioCtx.destination);
+  src.start(now);
+  src.stop(now + 0.14);
+}
+
 function silentToggleVibration() {
   if (vibActive) silentStopVibration();
   else silentStartVibration();
@@ -2336,62 +2385,103 @@ function silentStartVibration() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (audioCtx.state === 'suspended') audioCtx.resume();
-
-    // Stop tone-mode hvis aktiv (én lyd-kilde ad gangen for klarhed)
+    // Stop tone-mode hvis aktiv (én primær lyd-kilde ad gangen)
     if (sonifyActive) silentStopSonify();
 
-    vibCursor = 0;
-    vibProc = audioCtx.createScriptProcessor(2048, 0, 1);
-    vibProc.onaudioprocess = (e) => {
-      const out = e.outputBuffer.getChannelData(0);
-      const N = out.length;
-
-      // Brug seneste ~2 sek af buffer som looping kilde
-      const recentCount = Math.min(silentBuffer.length, 40);
-      if (recentCount < 5) {
-        for (let i = 0; i < N; i++) out[i] = 0;
-        return;
-      }
-      const samples = new Array(recentCount);
-      const offset = silentBuffer.length - recentCount;
-      for (let i = 0; i < recentCount; i++) samples[i] = silentBuffer[offset + i].z;
-
-      // Normaliser så peak ≈ 0.3 (med headroom)
-      let maxAbs = 0;
-      for (let i = 0; i < recentCount; i++) {
-        const a = Math.abs(samples[i]);
-        if (a > maxAbs) maxAbs = a;
-      }
-      const scale = maxAbs > 0 ? 0.3 / Math.max(maxAbs, 0.005) : 0;
-
-      // Læs samples med subsample-interpolation, advance med pitch-shift step
-      const sr = audioCtx.sampleRate;
-      const sourceHz = silentSampleRate > 0 ? silentSampleRate : 20;
-      const step = (VIB_PLAYBACK_RATE * sourceHz) / sr;
-
-      for (let i = 0; i < N; i++) {
-        const idxF = vibCursor % recentCount;
-        const idx = Math.floor(idxF);
-        const next = (idx + 1) % recentCount;
-        const frac = idxF - idx;
-        out[i] = (samples[idx] * (1 - frac) + samples[next] * frac) * scale;
-        vibCursor += step;
-      }
-    };
-    vibProc.connect(audioCtx.destination);
+    // Start kontinuerlig lavpas-filtreret hvid-støj som baseline
+    vibNoiseSrc = audioCtx.createBufferSource();
+    vibNoiseSrc.buffer = vibGetNoiseBuffer();
+    vibNoiseSrc.loop = true;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1800;
+    vibNoiseGain = audioCtx.createGain();
+    vibNoiseGain.gain.value = VIB_BASELINE_GAIN;
+    vibNoiseSrc.connect(lp);
+    lp.connect(vibNoiseGain);
+    vibNoiseGain.connect(audioCtx.destination);
+    vibNoiseSrc.start();
 
     vibActive = true;
+    vibLastKnaldTime = 0;
     document.getElementById('s-btn-vib').classList.add('active');
   } catch (e) {
     console.warn('Vibration-mode fejlede:', e.message);
   }
 }
 function silentStopVibration() {
-  if (vibProc) { try { vibProc.disconnect(); } catch(e) {} vibProc = null; }
+  if (vibNoiseSrc) { try { vibNoiseSrc.stop(); } catch(e) {} vibNoiseSrc = null; }
+  if (vibNoiseGain) { vibNoiseGain.disconnect(); vibNoiseGain = null; }
+  // Annullér evt. scheduled playback-knald
+  vibPlaybackTimers.forEach(id => clearTimeout(id));
+  vibPlaybackTimers = [];
   vibActive = false;
-  vibCursor = 0;
   const btn = document.getElementById('s-btn-vib');
   if (btn) btn.classList.remove('active');
+}
+
+// Live: kaldes ved hver indkommende data-pakke (kun når i live-mode)
+function silentVibLiveUpdate(peak) {
+  if (!vibActive || !silentFollowLive || !silentRecording) return;
+  const threshold = silentNoiseFloor > 0 ? silentNoiseFloor * 3 : 0.04;
+  if (peak < threshold) return;
+  const now = performance.now();
+  if (now - vibLastKnaldTime < VIB_KNALD_DEADTIME_MS) return;
+  vibLastKnaldTime = now;
+  // Normaliseret amplitude 0..1: ved 3× tærskel → 0, ved 10× tærskel → 1
+  const norm = Math.min(1, (peak / threshold - 1) / 3);
+  vibPlayKnald(norm);
+}
+
+// Playback: afspil samples i view-vinduet over playbackDurationMs.
+// Aktiveres fra "afspil"-knap når brugeren er i pause/scrollback.
+function silentVibPlayView(playbackDurationMs) {
+  if (silentBuffer.length < 5) return;
+  // Sørg for at audio er aktiv
+  if (!vibActive) silentStartVibration();
+  if (!audioCtx) return;
+
+  // Bestem view-vinduet
+  const lastT = silentBuffer[silentBuffer.length - 1].t;
+  const viewEnd = silentFollowLive ? lastT : silentViewEndMs;
+  const viewStart = viewEnd - silentViewMs;
+  const visible = silentBuffer.filter(s => s.t >= viewStart && s.t <= viewEnd);
+  if (visible.length < 2) return;
+
+  const threshold = silentNoiseFloor > 0 ? silentNoiseFloor * 3 : 0.04;
+  const speedup = silentViewMs / playbackDurationMs;
+  const minSepSamples = Math.max(2, Math.floor(silentSampleRate * 0.08));  // ~80ms separation i source-time
+
+  // Find peaks (lokale maxima over tærskel)
+  let lastPeakIdx = -minSepSamples;
+  const peaks = [];
+  for (let i = 1; i < visible.length - 1; i++) {
+    const a = Math.abs(visible[i].z);
+    if (a < threshold) continue;
+    if (i - lastPeakIdx < minSepSamples) continue;
+    // Bekræft lokalt max
+    let bestIdx = i, bestVal = a;
+    const lookahead = Math.min(visible.length, i + minSepSamples);
+    for (let j = i + 1; j < lookahead; j++) {
+      const va = Math.abs(visible[j].z);
+      if (va > bestVal) { bestVal = va; bestIdx = j; }
+    }
+    peaks.push({ t: visible[bestIdx].t, amp: bestVal });
+    lastPeakIdx = bestIdx;
+  }
+
+  // Annullér tidligere playback
+  vibPlaybackTimers.forEach(id => clearTimeout(id));
+  vibPlaybackTimers = [];
+
+  // Schedule knald-events
+  for (const p of peaks) {
+    const tInPlaybackMs = (p.t - viewStart) / speedup;
+    if (tInPlaybackMs < 0 || tInPlaybackMs > playbackDurationMs + 200) continue;
+    const norm = Math.min(1, (p.amp / threshold - 1) / 3);
+    const id = setTimeout(() => vibPlayKnald(norm), tInPlaybackMs);
+    vibPlaybackTimers.push(id);
+  }
 }
 
 // Send aktuelle indstillinger til stationen via dashboard-WS
@@ -2418,6 +2508,8 @@ function silentUpdateButtons() {
   document.getElementById('s-btn-start').style.display = silentRecording ? 'none' : '';
   document.getElementById('s-btn-pause').style.display = silentRecording ? '' : 'none';
   document.getElementById('s-btn-live').style.display = silentFollowLive ? 'none' : '';
+  // Vis 'afspil view'-knap kun i scrollback-tilstand
+  document.getElementById('s-btn-vib-play').style.display = silentFollowLive ? 'none' : '';
   silentCanvas.classList.toggle('live', silentFollowLive);
   const ind = document.getElementById('s-indicator');
   if (silentFollowLive && silentRecording) {
