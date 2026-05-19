@@ -91,6 +91,47 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .rec-timer { font-family: 'SF Mono', monospace; font-size: .85rem; color: var(--red);
   min-width: 40px; text-align: center; display: none; }
 
+/* ── Wavespeed live-panel (i lobby, under stats) ── */
+.ws-live-panel { grid-column: 1 / -1; padding: .9rem 1.2rem;
+  background: linear-gradient(180deg, rgba(0,180,216,.025), transparent);
+  border-top: .5px solid rgba(255,255,255,.06); display: none; }
+.ws-live-panel.show { display: block; }
+.ws-live-title { font-size: .6rem; text-transform: uppercase;
+  letter-spacing: .1em; opacity: .45; margin-bottom: .5rem; }
+.ws-live-content { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem;
+  align-items: start; }
+.ws-live-table { width: 100%; font-size: .75rem; border-collapse: collapse; }
+.ws-live-table th { font-size: .58rem; text-transform: uppercase;
+  letter-spacing: .08em; opacity: .4; padding: .25rem .4rem; text-align: right;
+  border-bottom: .5px solid rgba(255,255,255,.06); font-weight: 500; }
+.ws-live-table th:first-child { text-align: left; }
+.ws-live-table td { padding: .3rem .4rem; font-variant-numeric: tabular-nums; }
+.ws-live-table td:first-child { text-align: left; color: var(--cyan); font-weight: 500; }
+.ws-live-table td.num { text-align: right; }
+.ws-live-table td.muted { opacity: .35; }
+.ws-live-table tr.first-trigger td.dt { color: var(--green); font-weight: 600; }
+.ws-live-table tr.pending td.muted { color: rgba(245,240,232,.3); }
+.ws-live-right { display: flex; flex-direction: column; gap: .6rem; }
+.ws-live-result { padding: .6rem .8rem; background: rgba(0,180,216,.06);
+  border-radius: 8px; display: flex; align-items: baseline; gap: .5rem;
+  border: 1px solid rgba(0,180,216,.15); }
+.ws-live-result-label { font-size: .65rem; opacity: .55; text-transform: uppercase;
+  letter-spacing: .08em; }
+.ws-live-result-value { font-family: Georgia, serif; font-size: 1.4rem;
+  color: var(--cyan); font-weight: 600; font-variant-numeric: tabular-nums;
+  line-height: 1; }
+.ws-live-result-unit { font-size: .75rem; opacity: .6; }
+.ws-live-result-detail { font-size: .65rem; opacity: .5; margin-left: auto;
+  font-variant-numeric: tabular-nums; }
+.ws-planner { font-size: .7rem; opacity: .75; line-height: 1.55;
+  padding: .55rem .75rem; border-left: 2px solid rgba(0,180,216,.35);
+  background: rgba(0,180,216,.025); border-radius: 0 6px 6px 0; }
+.ws-planner strong { color: var(--cyan); font-weight: 600; }
+.ws-planner em { color: var(--orange); font-style: normal; font-weight: 500; }
+@media (max-width: 800px) {
+  .ws-live-content { grid-template-columns: 1fr; }
+}
+
 /* ── Wavespeed-resultat-panel ── */
 .ws-result { padding: .8rem 1.2rem; border-bottom: .5px solid rgba(255,255,255,.06);
   display: flex; gap: 1.6rem; align-items: stretch; flex-shrink: 0;
@@ -354,6 +395,35 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <div class="seismo-panel">
       <div class="panel-title">Live seismogrammer</div>
       <div id="seismo-list"></div>
+    </div>
+
+    <!-- Wavespeed live-panel (kun i wavespeed-mode) -->
+    <div class="ws-live-panel" id="ws-live-panel">
+      <div class="ws-live-title">Bølgehastighed — live</div>
+      <div class="ws-live-content">
+        <table class="ws-live-table">
+          <thead>
+            <tr>
+              <th>Station</th>
+              <th>Position</th>
+              <th>Ankomst</th>
+              <th>Δt</th>
+            </tr>
+          </thead>
+          <tbody id="ws-live-tbody"></tbody>
+        </table>
+        <div class="ws-live-right">
+          <div class="ws-live-result" id="ws-live-result" style="display:none">
+            <span class="ws-live-result-label">v ≈</span>
+            <span class="ws-live-result-value" id="ws-live-v">—</span>
+            <span class="ws-live-result-unit" id="ws-live-unit">m/s</span>
+            <span class="ws-live-result-detail" id="ws-live-detail">—</span>
+          </div>
+          <div class="ws-planner" id="ws-planner">
+            Indtast position (cm) for hver station, start optagelse, og bank på den ene ende.
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Stats -->
@@ -654,13 +724,15 @@ async function createSession(mode) {
     document.getElementById('scr-silent').classList.add('active');
     initSilentMode();
   } else {
-    // Wavespeed-dashboard (uændret)
+    // Wavespeed-dashboard
     document.getElementById('d-code').textContent = data.code;
     document.getElementById('d-qr').innerHTML = qrData.svg;
     document.getElementById('d-url').textContent = qrData.url;
 
     document.getElementById('scr-create').classList.remove('active');
     document.getElementById('scr-dash').classList.add('active');
+    document.getElementById('ws-live-panel').classList.add('show');
+    wsUpdateLivePanel();
   }
 
   connectDashboard(data.code);
@@ -714,6 +786,7 @@ function handleMsg(msg) {
       // Gem FØRSTE trigger pr. station efter recording-start (til bølgehastighed)
       if (sessionState === 'recording' && msg.t && !stationTriggers.has(msg.id)) {
         stationTriggers.set(msg.id, msg.t);
+        wsUpdateLivePanel();
       }
       break;
     case 'countdown':   setDashState('countdown'); break;
@@ -739,6 +812,7 @@ function addStation(msg) {
   document.getElementById('d-count').textContent = msg.count || stations.size;
   ensureSeismoRow(msg.id, msg.name || 'S' + msg.id);
   if (!recordingBuffer.has(msg.id)) recordingBuffer.set(msg.id, []);
+  wsUpdateLivePanel();
 }
 
 function updateStation(msg) {
@@ -753,6 +827,7 @@ function removeStation(msg) {
   const row = document.querySelector(`[data-station="${msg.id}"]`);
   if (row) row.remove();
   seismoData.delete(msg.id);
+  wsUpdateLivePanel();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -781,6 +856,7 @@ function ensureSeismoRow(id, name) {
     const v = parseFloat(posInput.value);
     if (isFinite(v)) stationPositions.set(id, v);
     else stationPositions.delete(id);
+    wsUpdateLivePanel();
   });
   // Pre-fill hvis stationen tidligere havde position
   if (stationPositions.has(id)) posInput.value = stationPositions.get(id);
@@ -854,6 +930,7 @@ function onRecordingStart() {
   recStartTime = Date.now();
   recStartAbsMs = Date.now();
   stationTriggers.clear();
+  wsUpdateLivePanel();
   recordingBuffer.forEach((v, k) => recordingBuffer.set(k, [])); // nulstil buffer
 
   // Auto-stop timer
@@ -1182,6 +1259,132 @@ document.getElementById('btn-back').addEventListener('click', () => {
 function wsResetForNewMeasurement() {
   stationTriggers.clear();
   // Behold stationPositions så lærer ikke skal indtaste afstande igen
+}
+
+// ═══════════════════════════════════════════════════════════
+// WAVESPEED (Mode B) — live-panel i lobby
+// ═══════════════════════════════════════════════════════════
+// Vi antager time-sync mellem telefoner er ca. ±10 ms (RTT/2 over WS).
+// For ankomst-differens mellem to telefoner: σ(Δt) ≈ √2 × 10 ms ≈ 14 ms.
+const WS_SYNC_STD_MS = 10;
+const WS_DT_STD_MS = WS_SYNC_STD_MS * Math.SQRT2;  // ~14 ms
+
+function wsUpdateLivePanel() {
+  const panel = document.getElementById('ws-live-panel');
+  if (!panel || !panel.classList.contains('show')) return;
+  const tbody = document.getElementById('ws-live-tbody');
+
+  // Saml stationer og sorter efter position (hvis sat), ellers efter id
+  const rows = [...stations.entries()].map(([id, st]) => ({
+    id, name: st.name || ('S' + id),
+    pos: stationPositions.has(id) ? stationPositions.get(id) : null,
+    trigger: stationTriggers.has(id) ? stationTriggers.get(id) : null
+  }));
+  rows.sort((a, b) => {
+    if (a.pos != null && b.pos != null) return a.pos - b.pos;
+    if (a.pos != null) return -1;
+    if (b.pos != null) return 1;
+    return a.id - b.id;
+  });
+
+  // Find første trigger (mindste tid blandt rows med trigger)
+  const triggeredRows = rows.filter(r => r.trigger != null);
+  const firstTrigger = triggeredRows.length ? Math.min(...triggeredRows.map(r => r.trigger)) : null;
+
+  // Render
+  tbody.innerHTML = '';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    if (r.trigger == null) tr.className = 'pending';
+    if (r.trigger != null && r.trigger === firstTrigger) tr.className = 'first-trigger';
+
+    const arrivalMs = r.trigger != null ? (r.trigger - recStartAbsMs) : null;
+    const dtMs = (r.trigger != null && firstTrigger != null) ? (r.trigger - firstTrigger) : null;
+
+    tr.innerHTML = `
+      <td>${r.name}</td>
+      <td class="num ${r.pos == null ? 'muted' : ''}">${r.pos != null ? r.pos + ' cm' : '—'}</td>
+      <td class="num ${arrivalMs == null ? 'muted' : ''}">${arrivalMs != null ? arrivalMs.toFixed(0) + ' ms' : '—'}</td>
+      <td class="num dt ${dtMs == null ? 'muted' : ''}">${dtMs != null ? (dtMs === 0 ? '0 ms' : '+' + dtMs.toFixed(0) + ' ms') : '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  wsUpdateLiveResult(rows);
+  wsUpdatePlanner(rows);
+}
+
+function wsUpdateLiveResult(rows) {
+  const resEl = document.getElementById('ws-live-result');
+  const valid = rows.filter(r => r.pos != null && r.trigger != null);
+  if (valid.length < 2) {
+    resEl.style.display = 'none';
+    return;
+  }
+  // Brug samme algoritme som review — lineær regression (eller direkte for 2 stationer)
+  valid.sort((a, b) => a.pos - b.pos);
+  const xs = valid.map(r => r.pos / 100);
+  const ys = valid.map(r => (r.trigger - recStartAbsMs) / 1000);
+  const n = valid.length;
+  const meanX = xs.reduce((s, x) => s + x, 0) / n;
+  const meanY = ys.reduce((s, y) => s + y, 0) / n;
+  const ssXY = xs.reduce((s, x, i) => s + (x - meanX) * (ys[i] - meanY), 0);
+  const ssXX = xs.reduce((s, x) => s + (x - meanX) ** 2, 0);
+  if (ssXX < 1e-12) { resEl.style.display = 'none'; return; }
+  const slope = ssXY / ssXX;
+  const v = Math.abs(slope) > 1e-12 ? 1 / Math.abs(slope) : Infinity;
+
+  resEl.style.display = '';
+  const valEl = document.getElementById('ws-live-v');
+  const unitEl = document.getElementById('ws-live-unit');
+  const detailEl = document.getElementById('ws-live-detail');
+  if (v >= 1000) {
+    valEl.textContent = (v / 1000).toFixed(2);
+    unitEl.textContent = 'km/s';
+  } else {
+    valEl.textContent = v < 100 ? v.toFixed(1) : Math.round(v).toString();
+    unitEl.textContent = 'm/s';
+  }
+  detailEl.textContent = n + ' station' + (n === 1 ? '' : 'er') + ' · ' + wsClassifyMedium(v);
+}
+
+function wsUpdatePlanner(rows) {
+  const plannerEl = document.getElementById('ws-planner');
+  const withPos = rows.filter(r => r.pos != null);
+
+  if (withPos.length === 0) {
+    plannerEl.innerHTML = 'Indtast <strong>position (cm)</strong> for hver station — fx S1 = 0, S2 = 50, S3 = 100 — så telefonerne ligger i en lige række. Bank derefter i den ene ende.';
+    return;
+  }
+  if (withPos.length < 2) {
+    plannerEl.innerHTML = 'Mindst <strong>2 stationer</strong> skal have position før vi kan beregne bølgehastighed. Indtast positioner og start optagelse.';
+    return;
+  }
+
+  // Spand mellem yderpositioner
+  const positions = withPos.map(r => r.pos);
+  const span_cm = Math.max(...positions) - Math.min(...positions);
+  const span_m = span_cm / 100;
+
+  if (span_cm < 1) {
+    plannerEl.innerHTML = '<em>Positionerne er næsten ens</em> — sæt telefonerne længere fra hinanden så vi kan måle en tidsforskel.';
+    return;
+  }
+
+  // Max pålidelig hastighed: σ(v)/v = σ(Δt)/Δt < 0.3 ⇒ Δt > σ/0.3
+  // v_max ved 30% usikkerhed: Δt_min = WS_DT_STD_MS / 0.3, v_max = span / Δt_min
+  const dtMin30_s = (WS_DT_STD_MS / 0.3) / 1000;
+  const vMax30 = span_m / dtMin30_s;
+
+  // For 10% usikkerhed
+  const dtMin10_s = (WS_DT_STD_MS / 0.1) / 1000;
+  const vMax10 = span_m / dtMin10_s;
+
+  const fmt = (v) => v >= 1000 ? (v / 1000).toFixed(1) + ' km/s' : Math.round(v) + ' m/s';
+
+  plannerEl.innerHTML =
+    'Med <strong>' + span_cm.toFixed(0) + ' cm</strong> spand og tidssync ±' + WS_SYNC_STD_MS + ' ms kan I pålideligt måle bølger op til <strong>' + fmt(vMax30) + '</strong> (med &lt;30% usikkerhed) — eller ~' + fmt(vMax10) + ' for skarp præcision (&lt;10%). ' +
+    'Hurtigere bølger giver større fejl — <em>øg afstanden</em> eller brug et langsommere medium.';
 }
 
 // ═══════════════════════════════════════════════════════════
