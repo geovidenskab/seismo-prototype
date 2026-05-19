@@ -10,6 +10,14 @@
 <meta name="theme-color" content="#faf6ee">
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
+
+<!-- Leaflet (lille kort til station-positioner) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
 <style>
 :root {
   /* Lyst varmt tema. Variabel-navne beholdes fra mørkt tema; værdier er flippet. */
@@ -106,6 +114,26 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   color: var(--warm); border-radius: 6px; padding: .3rem .5rem; font-size: .75rem; }
 .rec-timer { font-family: 'SF Mono', monospace; font-size: .85rem; color: var(--red);
   min-width: 40px; text-align: center; display: none; }
+
+/* ── Station-kort (Leaflet) ── */
+.station-map-panel { grid-column: 1 / -1; padding: 0;
+  border-top: .5px solid var(--border); overflow: hidden; }
+.station-map-header { display: flex; align-items: center; justify-content: space-between;
+  padding: .55rem .9rem; cursor: pointer; user-select: none;
+  font-size: .6rem; text-transform: uppercase; letter-spacing: .1em; opacity: .55; }
+.station-map-header:hover { opacity: .8; }
+.station-map-header .chev { font-family: 'SF Mono', monospace; font-size: .7rem;
+  transition: transform .2s; opacity: .55; }
+.station-map-panel.collapsed .chev { transform: rotate(-90deg); }
+.station-map-panel.collapsed .station-map { display: none; }
+.station-map { width: 100%; height: 200px; background: var(--sand); }
+.station-map .leaflet-container { background: var(--sand); }
+.station-map .station-tooltip {
+  background: var(--warm); color: #faf6ee; border: none;
+  border-radius: 4px; padding: 2px 6px; font-size: .65rem;
+  font-weight: 600; box-shadow: 0 2px 6px rgba(26,31,60,.25);
+}
+.station-map .station-tooltip::before { display: none; }
 
 /* ── Wavespeed live-panel (i lobby, under stats) ── */
 .ws-live-panel { grid-column: 1 / -1; padding: .9rem 1.2rem;
@@ -339,6 +367,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   font-family: 'SF Mono', 'Fira Code', monospace; }
 .silent-zoom-auto-btn { font-size: .7rem !important; text-transform: uppercase;
   letter-spacing: .05em; min-width: 48px !important; }
+.silent-sonify-btn { text-transform: uppercase; letter-spacing: .05em;
+  font-size: .72rem !important; min-width: 44px !important; }
+.silent-sonify-btn.active { background: var(--amber) !important;
+  color: #faf6ee !important; border-color: var(--amber) !important;
+  box-shadow: 0 0 0 0 var(--amber); animation: sonifyPulse 1.5s ease-in-out infinite; }
+@keyframes sonifyPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(201,139,33,.5); }
+  50%      { box-shadow: 0 0 0 4px rgba(201,139,33,0); }
+}
 
 .silent-timeline-wrap { padding: .5rem 1.2rem .8rem; flex-shrink: 0;
   border-top: .5px solid rgba(26,31,60,.06); }
@@ -414,6 +451,15 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <div class="seismo-panel">
       <div class="panel-title">Live seismogrammer</div>
       <div id="seismo-list"></div>
+    </div>
+
+    <!-- Station-kort (kun i wavespeed-mode, collapsibelt) -->
+    <div class="station-map-panel collapsed" id="station-map-panel" style="display:none">
+      <div class="station-map-header" id="station-map-header">
+        <span>Station-kort</span>
+        <span class="chev">▾</span>
+      </div>
+      <div class="station-map" id="station-map"></div>
     </div>
 
     <!-- Wavespeed live-panel (kun i wavespeed-mode) -->
@@ -570,6 +616,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
       <span class="silent-marker-count" id="s-marker-count">0</span>
       <button class="btn btn-outline silent-zoom-btn" id="s-btn-clear-markers" title="Slet alle markører">×</button>
     </span>
+    <button class="btn btn-outline silent-zoom-btn silent-sonify-btn" id="s-btn-sonify" title="Lyt til seismogrammet — tonen følger amplituden">lyt</button>
     <span class="silent-dl-group">
       <button class="btn btn-cyan silent-zoom-btn" id="s-btn-png" title="Download PNG-snapshot">PNG</button>
       <button class="btn btn-outline silent-zoom-btn" id="s-btn-csv" title="Download data + markører som CSV">CSV</button>
@@ -657,6 +704,11 @@ const seismoData = new Map();       // live: stationId → { samples[], canvas, 
 const recordingBuffer = new Map();  // review: stationId → [{t, z}]
 const stationPositions = new Map(); // wavespeed: stationId → cm
 const stationTriggers = new Map();  // wavespeed: stationId → første trigger-tid (ms, abs)
+const stationGPS = new Map();       // stationId → {lat, lng} (fra station:ready)
+
+// Leaflet-kort
+let leafletMap = null;
+const mapMarkers = new Map();       // stationId → L.circleMarker
 let triggerCount = 0;
 let globalPeak = 0;
 let recStartTime = 0;
@@ -694,6 +746,15 @@ let silentShowMag = true;
 
 // Klasse-magnitude (EMA-smoothed peak / noiseFloor)
 let silentPeakSmoothed = 0;
+
+// Sonifikation (Web Audio) — amplitude bliver til tone
+let audioCtx = null;
+let sonifyOsc = null;
+let sonifyGain = null;
+let sonifyActive = false;
+const SONIFY_MIN_FREQ = 150;    // Hz — ren støj-baseline
+const SONIFY_MAX_FREQ = 900;    // Hz — kraftig bank
+const SONIFY_MAX_GAIN = 0.18;   // begrænset så det ikke er irriterende
 
 // Markører — læreren klikker på seismogrammet for at markere et øjeblik
 const silentMarkers = []; // [{ t: ms, label: string }]
@@ -756,6 +817,7 @@ async function createSession(mode) {
     document.getElementById('scr-create').classList.remove('active');
     document.getElementById('scr-dash').classList.add('active');
     document.getElementById('ws-live-panel').classList.add('show');
+    setupMapPanel();
     wsUpdateLivePanel();
   }
 
@@ -837,21 +899,28 @@ function addStation(msg) {
   ensureSeismoRow(msg.id, msg.name || 'S' + msg.id);
   if (!recordingBuffer.has(msg.id)) recordingBuffer.set(msg.id, []);
   wsUpdateLivePanel();
+  // Hvis init-besked indeholder GPS-data, send det til kortet
+  if (typeof msg.lat === 'number' && typeof msg.lng === 'number') {
+    updateStationMap(msg);
+  }
 }
 
 function updateStation(msg) {
   const st = stations.get(msg.id);
   if (st) Object.assign(st, msg);
   document.getElementById('d-count').textContent = msg.count || stations.size;
+  updateStationMap(msg);
 }
 
 function removeStation(msg) {
   stations.delete(msg.id);
+  stationGPS.delete(msg.id);
   document.getElementById('d-count').textContent = msg.count || stations.size;
   const row = document.querySelector(`[data-station="${msg.id}"]`);
   if (row) row.remove();
   seismoData.delete(msg.id);
   wsUpdateLivePanel();
+  updateStationMap();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1283,6 +1352,96 @@ document.getElementById('btn-back').addEventListener('click', () => {
 function wsResetForNewMeasurement() {
   stationTriggers.clear();
   // Behold stationPositions så lærer ikke skal indtaste afstande igen
+}
+
+// ═══════════════════════════════════════════════════════════
+// LEAFLET-KORT — station-positioner
+// ═══════════════════════════════════════════════════════════
+function ensureMap() {
+  if (leafletMap || typeof L === 'undefined') return leafletMap;
+  try {
+    leafletMap = L.map('station-map', {
+      attributionControl: false,
+      zoomControl: true,
+    }).setView([56.16, 10.20], 7);   // Default: Danmark (Aarhus-Silkeborg-området)
+    L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+    }).addTo(leafletMap);
+    L.control.attribution({ position: 'bottomleft', prefix: false })
+     .addAttribution('© OpenStreetMap, © CARTO')
+     .addTo(leafletMap);
+  } catch (e) {
+    console.warn('Leaflet init fejlede:', e.message);
+  }
+  return leafletMap;
+}
+
+function updateStationMap(stationMsg) {
+  // Husk GPS når vi modtager station:ready
+  if (stationMsg && stationMsg.id != null &&
+      typeof stationMsg.lat === 'number' && typeof stationMsg.lng === 'number') {
+    stationGPS.set(stationMsg.id, { lat: stationMsg.lat, lng: stationMsg.lng });
+  }
+  if (!leafletMap) return;
+
+  // Tilføj/opdater markører
+  stationGPS.forEach(({ lat, lng }, id) => {
+    const name = stations.get(id)?.name || ('S' + id);
+    if (mapMarkers.has(id)) {
+      mapMarkers.get(id).setLatLng([lat, lng]);
+    } else {
+      const m = L.circleMarker([lat, lng], {
+        radius: 9,
+        color: '#0b7f99',
+        weight: 2,
+        fillColor: '#0b7f99',
+        fillOpacity: 0.45,
+      }).addTo(leafletMap);
+      m.bindTooltip(name, {
+        permanent: true,
+        direction: 'top',
+        offset: [0, -8],
+        className: 'station-tooltip',
+      });
+      mapMarkers.set(id, m);
+    }
+  });
+
+  // Fjern markører for stationer der er gået
+  for (const id of mapMarkers.keys()) {
+    if (!stations.has(id)) {
+      leafletMap.removeLayer(mapMarkers.get(id));
+      mapMarkers.delete(id);
+    }
+  }
+
+  // Fit-bounds hvis vi har stationer
+  const latlngs = [...stationGPS.values()].map(g => [g.lat, g.lng]);
+  if (latlngs.length === 1) {
+    leafletMap.setView(latlngs[0], 17);  // Zoom ind på enkelt-station
+  } else if (latlngs.length > 1) {
+    leafletMap.fitBounds(latlngs, { padding: [40, 40], maxZoom: 18 });
+  }
+}
+
+function setupMapPanel() {
+  const panel = document.getElementById('station-map-panel');
+  if (!panel || panel.dataset.bound) return;
+  panel.dataset.bound = '1';
+  panel.style.display = '';
+  document.getElementById('station-map-header').addEventListener('click', () => {
+    panel.classList.toggle('collapsed');
+    if (!panel.classList.contains('collapsed')) {
+      // Når man udfolder: init kort hvis ikke gjort + force-resize
+      setTimeout(() => {
+        ensureMap();
+        if (leafletMap) {
+          leafletMap.invalidateSize();
+          updateStationMap();
+        }
+      }, 50);
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1824,6 +1983,7 @@ function initSilentMode() {
 
   document.getElementById('s-btn-exit').addEventListener('click', () => {
     if (!confirm('Forlad øvelsen og luk session?')) return;
+    silentStopSonify();
     if (ws) { try { ws.onclose = null; ws.close(); } catch(e) {} }
     silentBuffer.length = 0;
     silentMarkers.length = 0;
@@ -1835,6 +1995,9 @@ function initSilentMode() {
     document.getElementById('scr-silent').classList.remove('active');
     document.getElementById('scr-create').classList.add('active');
   });
+
+  // Sonifikation toggle
+  document.getElementById('s-btn-sonify').addEventListener('click', silentToggleSonify);
 
   // Pan + zoom på hovedcanvas (når ikke i follow-live)
   silentCanvas.addEventListener('wheel', (e) => {
@@ -1936,6 +2099,9 @@ function silentPushData(msg) {
   silentPeakSmoothed = peak > silentPeakSmoothed
     ? silentPeakSmoothed + (peak - silentPeakSmoothed) * 0.5
     : silentPeakSmoothed + (peak - silentPeakSmoothed) * 0.05;
+
+  // Sonifikation: opdater tone hvis aktiv
+  silentUpdateSonify(peak);
 }
 
 // ── Klasse-magnitude: M = log₁₀(peak / noiseFloor) ──
@@ -2076,6 +2242,52 @@ function silentDownloadCSV() {
   link.click();
   document.body.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ── Sonifikation: omsæt amplitude til tone ──
+function silentToggleSonify() {
+  if (sonifyActive) silentStopSonify();
+  else silentStartSonify();
+}
+function silentStartSonify() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    sonifyOsc = audioCtx.createOscillator();
+    sonifyOsc.type = 'sine';
+    sonifyGain = audioCtx.createGain();
+    sonifyGain.gain.value = 0;
+    sonifyOsc.connect(sonifyGain);
+    sonifyGain.connect(audioCtx.destination);
+    sonifyOsc.frequency.value = SONIFY_MIN_FREQ;
+    sonifyOsc.start();
+    sonifyActive = true;
+    document.getElementById('s-btn-sonify').classList.add('active');
+  } catch (e) {
+    console.warn('Web Audio fejlede:', e.message);
+  }
+}
+function silentStopSonify() {
+  if (sonifyOsc) { try { sonifyOsc.stop(); } catch(e) {} sonifyOsc = null; }
+  if (sonifyGain) { sonifyGain.disconnect(); sonifyGain = null; }
+  sonifyActive = false;
+  const btn = document.getElementById('s-btn-sonify');
+  if (btn) btn.classList.remove('active');
+}
+function silentUpdateSonify(peak) {
+  if (!sonifyActive || !audioCtx || !sonifyGain || !sonifyOsc) return;
+  // Normaliseret amplitude: hvor mange gange over støjniveauet er signalet?
+  const ref = silentNoiseFloor > 0 ? silentNoiseFloor : 0.05;
+  const ratio = Math.max(0, (peak - ref) / ref);  // 0 ved støj-niveau, >0 over
+  // Logaritmisk mapping så lav-amplitude udsving stadig høres
+  const norm = Math.min(1, Math.log10(1 + ratio) / 1.5);  // 0 → 1
+  const targetFreq = SONIFY_MIN_FREQ + norm * (SONIFY_MAX_FREQ - SONIFY_MIN_FREQ);
+  const targetGain = norm * SONIFY_MAX_GAIN;
+  const t = audioCtx.currentTime + 0.06;
+  try {
+    sonifyOsc.frequency.linearRampToValueAtTime(targetFreq, t);
+    sonifyGain.gain.linearRampToValueAtTime(targetGain, t);
+  } catch(e) {}
 }
 
 // Send aktuelle indstillinger til stationen via dashboard-WS
