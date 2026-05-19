@@ -788,6 +788,15 @@ let vibPlaybackDurationMs = 0;
 let vibPlaybackViewStart = 0;  // tidsstempel for start af afspillet vindue (i ms)
 let vibPlaybackViewEnd = 0;
 
+// Rumble-lag: kontinuerlig dyb lyd ved vedvarende energi (langsomme bevægelser)
+let vibRumbleSrc = null;
+let vibRumbleGain = null;
+let vibRumbleFilter = null;
+const vibRmsBuffer = [];           // sliding window af recent |z| values
+const VIB_RMS_WINDOW = 20;         // ~1 sek ved 20 Hz
+const VIB_RUMBLE_ON = 1.5;         // start når RMS/noise > 1.5
+const VIB_RUMBLE_OFF = 1.15;       // fade ud når RMS/noise < 1.15 (hysterese)
+
 // Scrub: brugeren trækker manuelt cursoren over signalet
 let silentScrubbing = false;
 let silentScrubLastT = null;   // sidste tidsposition cursoren stod på (til diff-detektion)
@@ -2496,6 +2505,7 @@ function silentStartVibration() {
 function silentStopVibration() {
   if (vibNoiseSrc) { try { vibNoiseSrc.stop(); } catch(e) {} vibNoiseSrc = null; }
   if (vibNoiseGain) { vibNoiseGain.disconnect(); vibNoiseGain = null; }
+  vibStopRumble();
   // Annullér evt. scheduled playback-knald
   vibPlaybackTimers.forEach(id => clearTimeout(id));
   vibPlaybackTimers = [];
@@ -2506,9 +2516,86 @@ function silentStopVibration() {
   silentUpdateButtons();  // opdater scrub-cursor
 }
 
+// Rumble-lag: kontinuerlig lavpas-støj der følger RMS over glidende vindue.
+// Aktiveres når der er VEDVARENDE energi (modsat knald, som er enkelt-event).
+// Fysisk korrekt: langsomme, vedvarende rystelser (som rumlen i jordskælv)
+// får dyb kontinuerlig lyd; enkelte slag får kort knald.
+function vibStartRumble() {
+  if (vibRumbleSrc || !audioCtx) return;
+  vibRumbleSrc = audioCtx.createBufferSource();
+  vibRumbleSrc.buffer = vibGetNoiseBuffer();
+  vibRumbleSrc.loop = true;
+  vibRumbleFilter = audioCtx.createBiquadFilter();
+  vibRumbleFilter.type = 'lowpass';
+  vibRumbleFilter.frequency.value = 220;
+  vibRumbleFilter.Q.value = 1;
+  vibRumbleGain = audioCtx.createGain();
+  vibRumbleGain.gain.value = 0;
+  vibRumbleSrc.connect(vibRumbleFilter);
+  vibRumbleFilter.connect(vibRumbleGain);
+  vibRumbleGain.connect(audioCtx.destination);
+  vibRumbleSrc.start();
+}
+function vibStopRumble() {
+  if (vibRumbleSrc) { try { vibRumbleSrc.stop(); } catch(e) {} vibRumbleSrc = null; }
+  if (vibRumbleGain) { try { vibRumbleGain.disconnect(); } catch(e) {} vibRumbleGain = null; }
+  if (vibRumbleFilter) { try { vibRumbleFilter.disconnect(); } catch(e) {} vibRumbleFilter = null; }
+  vibRmsBuffer.length = 0;
+}
+// Påvirk rumble-gain/freq baseret på et ratio (rms/noiseFloor)
+function vibSetRumbleFromRatio(ratio) {
+  if (!vibActive || !audioCtx) return;
+  if (!vibRumbleSrc && ratio > VIB_RUMBLE_ON) vibStartRumble();
+  if (vibRumbleGain && vibRumbleFilter) {
+    const now = audioCtx.currentTime;
+    let targetVol = 0;
+    if (ratio > VIB_RUMBLE_OFF) {
+      targetVol = Math.min(0.45, (ratio - VIB_RUMBLE_OFF) * 0.07);
+    }
+    // Frekvens: 220 Hz (svag rumble) → 65 Hz (kraftig) — dybere ved mere energi
+    const targetFreq = Math.max(65, 220 - Math.min(155, (ratio - 1) * 22));
+    vibRumbleGain.gain.linearRampToValueAtTime(targetVol, now + 0.15);
+    vibRumbleFilter.frequency.linearRampToValueAtTime(targetFreq, now + 0.15);
+  }
+}
+
+// Live-mode: opdater RMS-buffer fra indkommende pakke + sæt rumble
+function vibUpdateRumble(peak) {
+  if (!vibActive || !audioCtx) return;
+  vibRmsBuffer.push(Math.abs(peak));
+  if (vibRmsBuffer.length > VIB_RMS_WINDOW) vibRmsBuffer.shift();
+  let sumSq = 0;
+  for (let i = 0; i < vibRmsBuffer.length; i++) sumSq += vibRmsBuffer[i] * vibRmsBuffer[i];
+  const rms = Math.sqrt(sumSq / Math.max(1, vibRmsBuffer.length));
+  const noiseRef = silentNoiseFloor > 0 ? silentNoiseFloor : 0.05;
+  vibSetRumbleFromRatio(rms / noiseRef);
+}
+
+// Playback/scrub: opdater rumble ud fra RMS i ±500ms omkring tidsstempel
+function vibUpdateRumbleAtTime(t) {
+  if (!vibActive || !audioCtx || silentBuffer.length < 5) return;
+  const halfWindowMs = 500;
+  let sumSq = 0, count = 0;
+  for (const s of silentBuffer) {
+    if (Math.abs(s.t - t) < halfWindowMs) {
+      sumSq += s.z * s.z;
+      count++;
+    }
+  }
+  if (count < 2) { vibSetRumbleFromRatio(0); return; }
+  const rms = Math.sqrt(sumSq / count);
+  const noiseRef = silentNoiseFloor > 0 ? silentNoiseFloor : 0.05;
+  vibSetRumbleFromRatio(rms / noiseRef);
+}
+
 // Live: kaldes ved hver indkommende data-pakke (kun når i live-mode)
 function silentVibLiveUpdate(peak) {
   if (!vibActive || !silentFollowLive || !silentRecording) return;
+
+  // Rumble: kontinuerlig lyd der følger RMS (vedvarende energi)
+  vibUpdateRumble(peak);
+
+  // Knald: enkelt-event ved store peaks
   const threshold = silentNoiseFloor > 0 ? silentNoiseFloor * 3 : 0.04;
   if (peak < threshold) return;
   const now = performance.now();
@@ -2871,6 +2958,16 @@ function silentDrawMain() {
     } else {
       vibPlaybackStartMs = 0;  // playback slut — bevar cursor ved sidste position
     }
+  }
+
+  // Hvis vib aktiv + cursor synlig: opdater rumble baseret på RMS omkring cursor
+  // (gør at man hører dyb rumlen mens man scrubber over et område med vedvarende energi
+  //  eller mens playback-cursor passerer en sådan zone).
+  if (vibActive && silentCursorMs != null && (vibPlaybackStartMs > 0 || silentScrubbing)) {
+    vibUpdateRumbleAtTime(silentCursorMs);
+  } else if (vibActive && !silentRecording && !silentScrubbing && vibPlaybackStartMs === 0) {
+    // I pause/stoppet uden aktivt scrub eller playback: fade rumble ud
+    vibSetRumbleFromRatio(0);
   }
 
   // Render cursor (amber linje + pegepind øverst) — bruges af både playback og scrub
