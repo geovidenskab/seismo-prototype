@@ -228,7 +228,8 @@ wss.on('connection', (ws, req) => {
     if (msg.type === 'data') {
       const packet = JSON.stringify({
         type: 'data', id: stationId,
-        t: msg.t, z: msg.z, peak: msg.peak
+        t: msg.t, z: msg.z, peak: msg.peak,
+        samples: Array.isArray(msg.samples) ? msg.samples.slice(0, 50) : undefined
       });
       session.dashboards.forEach(d => {
         if (d.readyState === 1) d.send(packet);
@@ -236,7 +237,7 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.type === 'trigger') {
-      const packet = JSON.stringify({ type: 'trigger', id: stationId, t: msg.t, amplitude: msg.amplitude });
+      const packet = JSON.stringify({ type: 'trigger', id: stationId, t: msg.t, amplitude: msg.amplitude, threshold: msg.threshold });
       session.dashboards.forEach(d => { if (d.readyState === 1) d.send(packet); });
     }
   });

@@ -337,9 +337,10 @@ document.addEventListener('visibilitychange', () => {
 
 // STA/LTA trigger
 let sta = 0, lta = 0.1;
-const STA_LEN = 0.5;  // seconds
-const LTA_LEN = 10;   // seconds
+const TRIG_K = 6;       // tærskel = 6 × kalibreret støjgulv
+const TRIG_MIN = 0.06;  // m/s² — nedre grænse, så ekstremt stille telefoner ikke trigger på ingenting
 let triggered = false;
+let overTaerskel = null; // første sample over tærsklen (venter på bekræftelse fra næste)
 
 // Seismogram data
 const samples = [];
@@ -784,17 +785,24 @@ function onLiveMotion(e) {
 
   const absVal = Math.abs(hpFiltered);
 
-  // STA/LTA trigger — kun relevant i wavespeed-mode
+  // Samplets egen tid: event.timeStamp ligger før handler-tiden, så vi korrigerer Date.now()
+  // med forsinkelsen mellem event og handler. Offset fra tidssync lægges til.
+  const tSample = Date.now() - Math.max(0, performance.now() - (e.timeStamp || performance.now())) + timeOffset;
+  // Ankomst-picker (v0.5.0) — kun i wavespeed-mode.
+  // Øjeblikkelig tærskel mod det kalibrerede støjgulv, to samples i træk. Tiden er det FØRSTE
+  // sample over tærsklen. Ingen historik (den gamle STA/LTA fyrede 1–15 samples for sent,
+  // senere jo svagere signalet var, og afhang af hvor længe telefonen havde ligget stille).
   if (sessionMode !== 'silent') {
-    const dt = 1 / Math.max(sampleRate, 30);
-    sta = sta + (absVal - sta) * (dt / STA_LEN);
-    lta = lta + (absVal - lta) * (dt / LTA_LEN);
-    const ratio = lta > 0.001 ? sta / lta : 0;
-
-    if (ratio > 3 && !triggered) {
-      triggered = true;
-      send({ type: 'trigger', t: Date.now() + timeOffset, amplitude: absVal });
-      setTimeout(() => { triggered = false; }, 2000);
+    const taerskel = Math.max(TRIG_K * noiseFloor, TRIG_MIN);
+    if (absVal > taerskel) {
+      if (overTaerskel === null) overTaerskel = { t: tSample, amp: absVal };
+      else if (!triggered) {
+        triggered = true;
+        send({ type: 'trigger', t: overTaerskel.t, amplitude: Math.max(absVal, overTaerskel.amp), threshold: taerskel });
+        setTimeout(() => { triggered = false; }, 2000);
+      }
+    } else {
+      overTaerskel = null;
     }
   }
 
@@ -812,18 +820,24 @@ function onLiveMotion(e) {
   }
 
   // Batch og send data — i silent-mode altid, i wavespeed kun under optagelse
-  batchBuffer.push({ t: Date.now() + timeOffset, z: hpFiltered });
+  batchBuffer.push({ t: tSample, z: hpFiltered });
   const now = performance.now();
-  const shouldSend = sessionMode === 'silent' || isRecording;
-  if (now - lastSendTime > currentSendInterval && batchBuffer.length > 0 && shouldSend) {
+  // Under optagelse: alle rå samples (60 Hz) med tidsstempel, så dashboardet selv kan finde ankomsten.
+  // Før optagelse (wavespeed): en svag livestrøm hvert 250 ms, så læreren kan se at telefonen lever.
+  const interval = (sessionMode === 'silent' || isRecording) ? currentSendInterval : 250;
+  if (now - lastSendTime > interval && batchBuffer.length > 0) {
     const peak = Math.max(...batchBuffer.map(s => Math.abs(s.z)));
     const avg = batchBuffer.reduce((a, s) => a + s.z, 0) / batchBuffer.length;
-    send({
+    const msg = {
       type: 'data',
       t: batchBuffer[Math.floor(batchBuffer.length / 2)].t,
       z: Math.round(avg * 1000) / 1000,
       peak: Math.round(peak * 1000) / 1000
-    });
+    };
+    if (isRecording && sessionMode !== 'silent') {
+      msg.samples = batchBuffer.map(s => [Math.round(s.t), Math.round(s.z * 10000) / 10000]);
+    }
+    send(msg);
     batchBuffer = [];
     lastSendTime = now;
   }
@@ -924,6 +938,7 @@ function startCountdown(duration) {
 
 function startRecording() {
   isRecording = true;
+  triggered = false; overTaerskel = null;
   showScreen('scr-live');
   document.getElementById('rec-badge').style.display = '';
   document.getElementById('live-status').textContent = `${stationName} — optagelse`;

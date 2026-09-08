@@ -98,7 +98,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .seismo-panel { overflow-y: auto; }
 .seismo-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .seismo-label { font-size: .6rem; opacity: .35; width: 28px; text-align: right; flex-shrink: 0; }
-.seismo-canvas { flex: 1; height: 28px; background: var(--canvas-bg); border-radius: 3px; }
+.seismo-canvas { flex: 1; height: 56px; background: var(--canvas-bg); border-radius: 3px; }
 .seismo-pos { width: 78px; flex-shrink: 0; background: rgba(26,31,60,.05);
   border: 1px solid rgba(26,31,60,.1); color: var(--warm); font-size: .68rem;
   padding: 3px 5px; border-radius: 4px; font-variant-numeric: tabular-nums; }
@@ -728,7 +728,37 @@ const mapMarkers = new Map();       // stationId → L.circleMarker
 let triggerCount = 0;
 let globalPeak = 0;
 let recStartTime = 0;
-let recStartAbsMs = 0;              // Date.now() ved recording:start, ankomsttider måles relativt til denne
+let recStartAbsMs = 0;
+const stationPicks = new Map();     // stationId → ankomsttid fundet på dashboardet ud fra rå samples (v0.5.0)
+// Ankomst = dashboardets pick (rå samples) hvis den findes, ellers telefonens trigger
+function arrivalFor(id) {
+  return stationPicks.has(id) ? stationPicks.get(id) : (stationTriggers.has(id) ? stationTriggers.get(id) : null);
+}
+// Picker: første sample over tærsklen (6 × stationens støjgulv), bekræftet af det næste sample.
+// Tiden interpoleres lineært mellem samplet før og det første over, så vi kommer under samplingens 17 ms.
+function wsPickArrival(id) {
+  const buf = recordingBuffer.get(id);
+  if (!buf || buf.length < 4) return null;
+  const st = stations.get(id);
+  let noise = st && isFinite(parseFloat(st.noise)) ? parseFloat(st.noise) : NaN;
+  if (!isFinite(noise) || noise <= 0) {
+    const forste = buf.filter(sm => sm.t - recStartAbsMs < 500).map(sm => sm.z);
+    if (forste.length < 5) return null;
+    const m = forste.reduce((a, b) => a + b, 0) / forste.length;
+    noise = Math.sqrt(forste.reduce((a, z) => a + (z - m) ** 2, 0) / forste.length) || 0.02;
+  }
+  const taerskel = Math.max(6 * noise, 0.06);
+  for (let i = 1; i < buf.length - 1; i++) {
+    if (buf[i].t <= recStartAbsMs + 300) continue;          // spring optagelsens første 300 ms over (transient)
+    const a0 = Math.abs(buf[i].z), a1 = Math.abs(buf[i + 1].z);
+    if (a0 > taerskel && a1 > taerskel) {
+      const foer = Math.abs(buf[i - 1].z);
+      const frac = (a0 - foer) > 1e-9 ? Math.min(1, Math.max(0, (taerskel - foer) / (a0 - foer))) : 1;
+      return buf[i - 1].t + frac * (buf[i].t - buf[i - 1].t);
+    }
+  }
+  return null;
+}              // Date.now() ved recording:start, ankomsttider måles relativt til denne
 let recAutoStopTimer = null;
 let recTimerIv = null;
 
@@ -933,6 +963,7 @@ function handleMsg(msg) {
       seismoData.forEach(sd => sd.samples = []);
       recordingBuffer.clear();
       stationTriggers.clear();
+      stationPicks.clear();
       break;
   }
 }
@@ -973,7 +1004,7 @@ function removeStation(msg) {
 // ═══════════════════════════════════════════════════════════
 // LIVE SEISMOGRAMS
 // ═══════════════════════════════════════════════════════════
-const MAX_SEISMO = 200;
+const MAX_SEISMO = 600;
 
 function ensureSeismoRow(id, name) {
   if (seismoData.has(id)) return;
@@ -1003,7 +1034,7 @@ function ensureSeismoRow(id, name) {
 
   const canvas = document.createElement('canvas');
   canvas.className = 'seismo-canvas';
-  canvas.height = 28 * (window.devicePixelRatio || 1);
+  canvas.height = 56 * (window.devicePixelRatio || 1);
   row.appendChild(label);
   row.appendChild(posLabel);
   row.appendChild(posInput);
@@ -1013,18 +1044,25 @@ function ensureSeismoRow(id, name) {
 }
 
 function handleData(msg) {
+  const raa = Array.isArray(msg.samples) && msg.samples.length ? msg.samples : null;
   // Live strip
   const sd = seismoData.get(msg.id);
   if (sd) {
-    sd.samples.push(msg.z);
-    if (sd.samples.length > MAX_SEISMO) sd.samples.shift();
+    if (raa) raa.forEach(([, z]) => sd.samples.push(z)); else sd.samples.push(msg.z);
+    while (sd.samples.length > MAX_SEISMO) sd.samples.shift();
     if (Math.abs(msg.peak) > sd.peak) sd.peak = Math.abs(msg.peak);
   }
-
-  // Recording buffer (kun under optagelse)
+  // Recording buffer (kun under optagelse): rå 60 Hz-samples hvis telefonen sender dem (v0.5.0)
   if (sessionState === 'recording') {
     if (!recordingBuffer.has(msg.id)) recordingBuffer.set(msg.id, []);
-    recordingBuffer.get(msg.id).push({ t: msg.t || Date.now(), z: msg.z });
+    const buf = recordingBuffer.get(msg.id);
+    if (raa) raa.forEach(([t, z]) => buf.push({ t, z }));
+    else buf.push({ t: msg.t || Date.now(), z: msg.z });
+    // Ankomst-pick på dashboardet, live, så snart data er der
+    if (raa && !stationPicks.has(msg.id)) {
+      const pick = wsPickArrival(msg.id);
+      if (pick != null) { stationPicks.set(msg.id, pick); wsUpdateLivePanel(); }
+    }
   }
 
   if (Math.abs(msg.peak) > globalPeak) {
@@ -1070,6 +1108,7 @@ function onRecordingStart() {
   recStartTime = Date.now();
   recStartAbsMs = Date.now();
   stationTriggers.clear();
+  stationPicks.clear();
   wsUpdateLivePanel();
   recordingBuffer.forEach((v, k) => recordingBuffer.set(k, [])); // nulstil buffer
 
@@ -1143,6 +1182,7 @@ function openReview() {
   document.getElementById('scr-review').classList.add('active');
 
   setupReviewInteraction();
+  recordingBuffer.forEach((_, id) => { const pk = wsPickArrival(id); if (pk != null) stationPicks.set(id, pk); });
   wsUpdateResult();
   requestAnimationFrame(drawReview);
 }
@@ -1222,6 +1262,19 @@ function drawReview() {
 
     // Trigger-markør (Mode B): lodret streg hvor STA/LTA detekterede signalet
     const stationId = [...rvCanvases.entries()].find(([id, c]) => c.canvas === canvas)?.[0];
+    if (stationId != null && stationPicks.has(stationId)) {
+      const relP = stationPicks.get(stationId) - minT;
+      if (relP >= rvViewStart && relP <= rvViewEnd) {
+        const x = ((relP - rvViewStart) / dur) * w;
+        ctx.strokeStyle = 'rgba(46,204,113,.95)';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+        ctx.fillStyle = 'rgba(46,204,113,.95)';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText('ankomst', x + 4, 12);
+      }
+    }
     if (stationId != null && stationTriggers.has(stationId)) {
       const triggerT = stationTriggers.get(stationId);
       const relT = triggerT - minT;
@@ -1398,6 +1451,7 @@ document.getElementById('btn-back').addEventListener('click', () => {
 // Hjælper: ankomsttid i ms relativt til recording-start, vist i lobby ved næste session
 function wsResetForNewMeasurement() {
   stationTriggers.clear();
+  stationPicks.clear();
   // Behold stationPositions så lærer ikke skal indtaste afstande igen
 }
 
@@ -1522,7 +1576,7 @@ function wsUpdateLivePanel() {
   const rows = [...stations.entries()].map(([id, st]) => ({
     id, name: st.name || ('S' + id),
     pos: stationPositions.has(id) ? stationPositions.get(id) : null,
-    trigger: stationTriggers.has(id) ? stationTriggers.get(id) : null
+    trigger: arrivalFor(id)
   }));
   rows.sort((a, b) => {
     if (a.pos != null && b.pos != null) return a.pos - b.pos;
@@ -1597,7 +1651,7 @@ function wsUpdatePlanner(rows) {
   const withPos = rows.filter(r => r.pos != null);
 
   if (withPos.length === 0) {
-    plannerEl.innerHTML = 'Indtast <strong>position (cm)</strong> for hver station — fx S1 = 0, S2 = 50, S3 = 100 — så telefonerne ligger i en lige række. Bank derefter i den ene ende.';
+    plannerEl.innerHTML = 'Indtast <strong>position (cm)</strong> for hver station i en lige række — fx S1 = 0, S2 = 500, S3 = 1000, S4 = 1500 (gymnastiksal eller lang gang). Stamp i den ene ende. <em>Tommelfingerregel: afstanden i meter skal være mindst en tiendedel af den hastighed i m/s, I vil måle.</em>';
     return;
   }
   if (withPos.length < 2) {
@@ -1637,7 +1691,9 @@ function wsUpdatePlanner(rows) {
 function wsComputeResult() {
   // Saml stationer der har BÅDE position OG trigger
   const points = [];
-  stationTriggers.forEach((tAbs, id) => {
+  stations.forEach((st, id) => {
+    const tAbs = arrivalFor(id);
+    if (tAbs == null) return;
     const pos = stationPositions.get(id);
     if (pos == null || !isFinite(pos)) return;
     const tRel = (tAbs - recStartAbsMs) / 1000; // sek siden recording-start
