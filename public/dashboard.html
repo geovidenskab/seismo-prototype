@@ -307,6 +307,20 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
   color: var(--cyan); font-weight: 600; letter-spacing: .2em; }
 .silent-waiting .url { font-size: .7rem; opacity: .35; word-break: break-all; }
 
+/* Telefonpanel (v0.6.0) */
+.silent-stationer { flex-shrink: 0; max-height: 30vh; overflow: auto; border-top: .5px solid rgba(26,31,60,.08); padding: .45rem 1.2rem .3rem; }
+.silent-stationer-top { display: flex; align-items: center; gap: .5rem; margin-bottom: .3rem; }
+.silent-stationer-titel { font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; opacity: .55; flex: 1; }
+.silent-stationer-hint { text-transform: none; letter-spacing: 0; opacity: .7; }
+.silent-stationer-liste { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: .25rem .9rem; }
+.s-row { display: flex; align-items: center; gap: .55rem; padding: .2rem .35rem; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+.s-row:hover { background: rgba(11,127,153,.05); }
+.s-row.aktiv { background: rgba(11,127,153,.09); border-color: rgba(11,127,153,.35); }
+.s-row.fra { opacity: .55; cursor: default; }
+.s-navn { font-family: 'SF Mono', 'Fira Code', monospace; font-size: .75rem; min-width: 2.2rem; }
+.s-strip { flex: 1; height: 34px; background: var(--canvas-bg); border-radius: 4px; }
+.s-toggle { min-width: 40px; font-size: .62rem; letter-spacing: .04em; padding: .22rem .45rem; border-radius: 10px; border: 1px solid var(--cyan); background: transparent; color: var(--cyan); cursor: pointer; }
+.s-toggle.fra { border-color: var(--orange); color: var(--orange); }
 .silent-controls { display: flex; gap: .8rem; padding: .8rem 1.2rem;
   border-top: .5px solid rgba(26,31,60,.06); align-items: center; justify-content: center;
   flex-shrink: 0; flex-wrap: wrap; }
@@ -412,8 +426,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
               fill="none" stroke="#00b4d8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <div class="mode-title">Hvor stille kan du være?</div>
-      <div class="mode-desc">Én elevtelefon lytter til klassen og viser signalet live på tavlen. Ingen optagelses-knap — bare lyt, observér, og spol tilbage hvis I så noget spændende.</div>
-      <div class="mode-meta">1 telefon · live · scrollback</div>
+      <div class="mode-desc">Elevernes telefoner lytter til klassen. Du vælger, hvilken der vises stort på tavlen, og kan slå telefoner til og fra. Ingen optagelses-knap — bare lyt, observér, og spol tilbage hvis I så noget spændende.</div>
+      <div class="mode-meta">mange telefoner · live · scrollback</div>
     </button>
 
     <button class="mode-card" data-mode="wavespeed">
@@ -607,11 +621,19 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
     <div class="silent-waiting" id="s-waiting">
       <div class="qr-wrap" id="s-qr-big"></div>
       <div class="code-big" id="s-code-big">—</div>
-      <div class="label">Scan QR-koden med én elevtelefon, eller indtast koden manuelt på station-siden.</div>
+      <div class="label">Scan QR-koden med elevernes telefoner, eller indtast koden på station-siden. Du vælger på tavlen, hvilken telefon der vises stort.</div>
       <div class="url" id="s-url-big"></div>
     </div>
   </div>
 
+  <div class="silent-stationer" id="s-stationer" style="display:none">
+    <div class="silent-stationer-top">
+      <span class="silent-stationer-titel">Telefoner <span class="silent-stationer-hint">· klik på en for at vise den stort</span></span>
+      <button class="btn btn-outline silent-zoom-btn" id="s-alle-til" title="Slå alle telefoner til">alle til</button>
+      <button class="btn btn-outline silent-zoom-btn" id="s-alle-fra" title="Slå alle telefoner fra">alle fra</button>
+    </div>
+    <div class="silent-stationer-liste" id="s-stationer-liste"></div>
+  </div>
   <div class="silent-controls">
     <button class="btn btn-green" id="s-btn-start">START</button>
     <button class="btn btn-red" id="s-btn-pause" style="display:none">PAUSE</button>
@@ -915,17 +937,22 @@ function handleMsg(msg) {
   if (sessionMode === 'silent') {
     switch (msg.type) {
       case 'init':
-        if (msg.stations && msg.stations.length) silentSetStation(msg.stations[0]);
+        (msg.stations || []).forEach(st => silentAddStation(st));
         break;
       case 'station:joined':
       case 'station:ready':
-        silentSetStation(msg);
+        silentAddStation(msg);
         break;
       case 'station:left':
-        silentSetStation(null);
+        silentRemoveStation(msg.id);
         break;
+      case 'station:muted': {
+        const st = silentStations.get(msg.id);
+        if (st) { st.muted = !!msg.muted; if (st.muted && silentActiveId === msg.id) silentVaelgNaeste(); else if (!st.muted && silentActiveId == null) silentSelect(st.id); silentRenderRows(); silentUpdateHeader(); }
+        break;
+      }
       case 'data':
-        silentPushData(msg);
+        silentRouteData(msg);
         break;
       // recording:start/stop/trigger ignoreres i silent
     }
@@ -2268,6 +2295,132 @@ function silentPushData(msg) {
   silentUpdateSonify(peak);        // tone-mode (hvis aktiv)
   silentVibLiveUpdate(peak);       // vib-mode live-knald (hvis aktiv + live)
 }
+
+// ── Mange telefoner (v0.6.0): panel med striber, til/fra, og valg af den, der vises stort ──
+const silentStations = new Map();   // id → { id, name, noise, hz, muted, buf:[{t,z}], samples:[z], canvas, ctx }
+let silentActiveId = null;
+const SILENT_STRIP_MAX = 240;
+function silentAddStation(msg) {
+  if (msg.id == null) return;
+  let st = silentStations.get(msg.id);
+  if (!st) {
+    st = { id: msg.id, name: msg.name || ('S' + msg.id), noise: 0, hz: 20, muted: !!msg.muted, buf: [], samples: [], canvas: null, ctx: null };
+    silentStations.set(msg.id, st);
+  }
+  if (msg.name) st.name = msg.name;
+  if (typeof msg.noise !== 'undefined') { const n = parseFloat(msg.noise); if (isFinite(n) && n > 0) st.noise = n; }
+  if (typeof msg.hz !== 'undefined' && msg.hz) st.hz = msg.hz;
+  if (typeof msg.muted !== 'undefined') st.muted = !!msg.muted;
+  silentRenderRows();
+  if (silentActiveId == null && !st.muted) silentSelect(st.id);
+  else if (silentActiveId === st.id) silentSetStation({ id: st.id, name: st.name, noise: st.noise, hz: st.hz });
+  silentUpdateHeader();
+}
+function silentRemoveStation(id) {
+  silentStations.delete(id);
+  const row = document.querySelector(`#s-stationer-liste [data-id="${id}"]`);
+  if (row) row.remove();
+  if (silentActiveId === id) { silentActiveId = null; silentVaelgNaeste(); }
+  silentRenderRows();
+  silentUpdateHeader();
+}
+function silentVaelgNaeste() {
+  const kandidat = [...silentStations.values()].find(st => !st.muted && st.id !== silentActiveId);
+  if (kandidat) silentSelect(kandidat.id);
+  else { silentActiveId = null; silentSetStation(null); silentUpdateHeader(); }
+}
+function silentSelect(id) {
+  const st = silentStations.get(id);
+  if (!st) return;
+  silentActiveId = id;
+  silentSetStation({ id: st.id, name: st.name, noise: st.noise, hz: st.hz });
+  // Den store graf viser den valgte telefons historik
+  silentBuffer.length = 0;
+  for (const sm of st.buf) silentBuffer.push(sm);
+  silentPeakSmoothed = 0;
+  silentRenderRows();
+  silentUpdateHeader();
+}
+function silentRouteData(msg) {
+  const st = silentStations.get(msg.id);
+  if (!st) return;
+  if (st.muted) return;
+  const t = msg.t || Date.now();
+  st.buf.push({ t, z: msg.z });
+  if (st.buf.length > SILENT_BUFFER_MAX) st.buf.shift();
+  st.samples.push(msg.z);
+  if (st.samples.length > SILENT_STRIP_MAX) st.samples.shift();
+  if (msg.id === silentActiveId) silentPushData(msg);
+}
+function silentUpdateHeader() {
+  const stateEl = document.getElementById('s-station-state');
+  const waitEl = document.getElementById('s-waiting');
+  const n = silentStations.size;
+  if (!n) { stateEl.textContent = 'Venter på telefoner'; stateEl.className = 'silent-station-state gone'; if (waitEl) waitEl.style.display = ''; return; }
+  if (waitEl) waitEl.style.display = 'none';
+  const aktiv = silentActiveId != null ? silentStations.get(silentActiveId) : null;
+  const fra = [...silentStations.values()].filter(st => st.muted).length;
+  stateEl.textContent = n + (n === 1 ? ' telefon' : ' telefoner') + (fra ? ' · ' + fra + ' fra' : '') + (aktiv ? ' · ' + aktiv.name + ' vises' : ' · ingen vises');
+  stateEl.className = 'silent-station-state ' + (aktiv ? 'ready' : 'gone');
+}
+function silentSendMute(id, muted, all) {
+  if (!ws || ws.readyState !== 1) return;
+  ws.send(JSON.stringify(all ? { type: 'station:mute', all: true, muted } : { type: 'station:mute', id, muted }));
+}
+function silentRenderRows() {
+  const liste = document.getElementById('s-stationer-liste');
+  const panel = document.getElementById('s-stationer');
+  if (!liste) return;
+  if (panel) panel.style.display = silentStations.size ? '' : 'none';
+  for (const st of silentStations.values()) {
+    let row = liste.querySelector(`[data-id="${st.id}"]`);
+    if (!row) {
+      row = document.createElement('div');
+      row.className = 's-row'; row.dataset.id = st.id;
+      row.innerHTML = '<button class="s-toggle" type="button"></button><span class="s-navn"></span><canvas class="s-strip"></canvas>';
+      row.querySelector('.s-toggle').addEventListener('click', (e) => { e.stopPropagation(); silentSendMute(st.id, !silentStations.get(st.id)?.muted, false); });
+      row.addEventListener('click', () => { if (!silentStations.get(st.id)?.muted) silentSelect(st.id); });
+      liste.appendChild(row);
+      st.canvas = row.querySelector('.s-strip'); st.ctx = st.canvas.getContext('2d');
+    }
+    row.classList.toggle('aktiv', st.id === silentActiveId);
+    row.classList.toggle('fra', !!st.muted);
+    const tg = row.querySelector('.s-toggle');
+    tg.textContent = st.muted ? 'fra' : 'til';
+    tg.classList.toggle('fra', !!st.muted);
+    tg.title = st.muted ? 'Slå telefonen til' : 'Slå telefonen fra (den stopper med at sende)';
+    row.querySelector('.s-navn').textContent = st.name;
+  }
+}
+// Tegn striberne
+setInterval(() => {
+  if (sessionMode !== 'silent') return;
+  silentStations.forEach(st => {
+    const c = st.canvas, ctx = st.ctx; if (!c || !ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
+    if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const mid = h / 2;
+    ctx.strokeStyle = 'rgba(255,255,255,.08)'; ctx.lineWidth = .5;
+    ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(w, mid); ctx.stroke();
+    if (st.muted) { ctx.fillStyle = 'rgba(255,255,255,.25)'; ctx.font = '10px sans-serif'; ctx.fillText('slået fra', 6, mid + 4); return; }
+    if (st.samples.length < 2) return;
+    const maxAbs = Math.max(...st.samples.map(Math.abs), Math.max(st.noise * 6, 0.05));
+    const scale = maxAbs * 1.3;
+    ctx.strokeStyle = st.id === silentActiveId ? '#00b4d8' : 'rgba(0,180,216,.55)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = 0; i < st.samples.length; i++) {
+      const x = (SILENT_STRIP_MAX - st.samples.length + i) / SILENT_STRIP_MAX * w;
+      const y = mid - (st.samples[i] / scale) * (h * 0.42);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+}, 100);
+document.getElementById('s-alle-til')?.addEventListener('click', () => silentSendMute(null, false, true));
+document.getElementById('s-alle-fra')?.addEventListener('click', () => silentSendMute(null, true, true));
 
 // ── Klasse-magnitude: M = log₁₀(peak / noiseFloor) ──
 function silentMagnitudeLabel(M) {

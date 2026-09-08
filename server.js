@@ -47,7 +47,8 @@ function stationList(session) {
     hz: ws._info?.hz || 0,
     noise: ws._info?.noise || 0,
     offset: ws._info?.offset || 0,
-    status: ws._info?.status || 'connecting'
+    status: ws._info?.status || 'connecting',
+    muted: !!ws._info?.muted
   }));
 }
 
@@ -168,6 +169,17 @@ wss.on('connection', (ws, req) => {
         session.recording = false;
         broadcastToRoom(code, { type: 'recording-stopped' });
       }
+      // Slå en telefon (eller alle) til/fra: telefonen får besked og stopper med at sende
+      if (msg.type === 'station:mute') {
+        const muted = !!msg.muted;
+        const maal = msg.all ? [...session.stations.entries()] : [[Number(msg.id), session.stations.get(Number(msg.id))]];
+        for (const [id, stationWs] of maal) {
+          if (!stationWs) continue;
+          stationWs._info = { ...stationWs._info, muted };
+          if (stationWs.readyState === 1) stationWs.send(JSON.stringify({ type: 'station:mute', muted }));
+          broadcastToRoom(code, { type: 'station:muted', id, muted });
+        }
+      }
       // Indstillinger fra dashboard videresendes til alle stationer
       if (msg.type === 'station:settings') {
         session.stations.forEach(stationWs => {
@@ -179,22 +191,14 @@ wss.on('connection', (ws, req) => {
   }
 
   // ─── Station ──────────────────────────────────────
-  // Silent-mode tillader kun én station ad gangen
-  if (session.mode === 'silent' && session.stations.size >= 1) {
-    ws.send(JSON.stringify({
-      type: 'error',
-      msg: 'Denne øvelse bruger kun én telefon — der er allerede tilsluttet en station.'
-    }));
-    ws.close();
-    return;
-  }
-
+  // v0.6.0: silent-mode tillader mange telefoner; læreren vælger på tavlen, hvilken der vises,
+  // og kan slå telefoner til og fra (station:mute).
   const stationId = session.nextStationId++;
   ws._info = { name: 'S' + stationId, status: 'connecting' };
   ws._stationId = stationId;
   session.stations.set(stationId, ws);
 
-  ws.send(JSON.stringify({ type: 'welcome', stationId, name: 'S' + stationId, mode: session.mode, version: APP_VERSION, recording: session.recording }));
+  ws.send(JSON.stringify({ type: 'welcome', stationId, name: 'S' + stationId, mode: session.mode, version: APP_VERSION, recording: session.recording, count: session.stations.size }));
   broadcastToRoom(code, {
     type: 'station:joined',
     id: stationId, name: 'S' + stationId, status: 'connecting',
@@ -226,6 +230,7 @@ wss.on('connection', (ws, req) => {
     }
 
     if (msg.type === 'data') {
+      if (ws._info?.muted) return;   // slået fra af læreren
       const packet = JSON.stringify({
         type: 'data', id: stationId,
         t: msg.t, z: msg.z, peak: msg.peak,

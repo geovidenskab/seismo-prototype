@@ -130,6 +130,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sa
 .countdown-overlay { position: absolute; inset: 0; display: flex; align-items: center;
   justify-content: center; font-size: 4rem; font-weight: 700; color: var(--cyan);
   background: rgba(10,15,60,.7); z-index: 10; display: none; }
+.canvas-wrap.muted { opacity: .35; }
 .rec-badge { display: none; position: absolute; top: 8px; right: 8px; padding: 3px 10px;
   background: rgba(194,59,70,.15); color: var(--red); border-radius: 10px;
   font-size: .6rem; font-weight: 600; z-index: 5; animation: recBlink 1s step-end infinite; }
@@ -279,6 +280,7 @@ let stationId = '';
 let stationName = '';
 let stationNumber = 0;
 let sessionMode = 'wavespeed';  // 'silent' | 'wavespeed'
+let muted = false;              // slået fra af læreren (v0.6.0)
 let gpsLat = null, gpsLng = null;
 let timeOffset = 0;
 let noiseFloor = 0;
@@ -432,6 +434,7 @@ function handleMessage(msg) {
       stationName = msg.name;
       stationNumber = parseInt(msg.name.replace('S', ''));
       sessionMode = msg.mode || 'wavespeed';
+      if (msg.count) peerCount = msg.count;
       currentAlpha = sessionMode === 'silent' ? ALPHA_SILENT : ALPHA_WAVESPEED;
       if (msg.version) {
         const vt = document.getElementById('version-tag');
@@ -452,6 +455,11 @@ function handleMessage(msg) {
       }
       break;
 
+    case 'station:mute':
+      muted = !!msg.muted;
+      batchBuffer = [];
+      opdaterLiveStatus();
+      break;
     case 'error':
       showJoinStatus(msg.msg || msg.message || 'Fejl', 'err');
       if (ws) try { ws.close(); } catch(e) {}
@@ -696,9 +704,7 @@ function startCalibration() {
       if (sessionMode === 'silent') {
         // Silent-mode: gå direkte til live-canvas så brugeren ser at sensoren virker
         showScreen('scr-live');
-        const statusEl = document.getElementById('live-status');
-        statusEl.textContent = stationName + ' lytter — kig på tavlen';
-        statusEl.className = 'status info';
+        opdaterLiveStatus();
       } else {
         // Wavespeed: vent på lærer i lobby
         showScreen('scr-ready');
@@ -717,12 +723,30 @@ function startCalibration() {
   }
 }
 
+// Statuslinje på live-skærmen (silent-mode): lytter / sat på pause, og hvor mange telefoner der er med
+function opdaterLiveStatus() {
+  const el = document.getElementById('live-status');
+  const wrap = document.querySelector('.canvas-wrap');
+  if (!el || !document.getElementById('scr-live').classList.contains('active')) return;
+  if (muted) {
+    el.textContent = stationName + ' er sat på pause af læreren — vent';
+    el.className = 'status warn';
+    wrap && wrap.classList.add('muted');
+    return;
+  }
+  wrap && wrap.classList.remove('muted');
+  if (sessionMode === 'silent') {
+    el.textContent = stationName + ' lytter — kig på tavlen' + (peerCount > 1 ? ' · ' + peerCount + ' telefoner med' : '');
+    el.className = 'status info';
+  }
+}
 // ═══════════════════════════════════════════════════════════
 // SCREEN 3: READY / PEERS
 // ═══════════════════════════════════════════════════════════
 let peerCount = 1;
 function updatePeers(msg) {
   if (msg.count) peerCount = msg.count;
+  opdaterLiveStatus();
   const el = document.getElementById('peers-list');
   el.innerHTML = '';
   for (let i = 1; i <= peerCount; i++) {
@@ -782,6 +806,7 @@ function onLiveMotion(e) {
   // Warmup: opdater filter-state men send/lagre ikke (lader filter konvergere)
   const elapsed = performance.now() - streamStartTime;
   if (elapsed < WARMUP_MS) return;
+  if (muted) return;   // læreren har slået telefonen fra: filteret kører, intet sendes
 
   const absVal = Math.abs(hpFiltered);
 
